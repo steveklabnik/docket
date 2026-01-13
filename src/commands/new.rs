@@ -32,9 +32,7 @@ pub fn new(
     // Get title interactively if not provided
     let title = match title {
         Some(t) => t,
-        None => Input::new()
-            .with_prompt("Bug title")
-            .interact_text()?,
+        None => Input::new().with_prompt("Bug title").interact_text()?,
     };
 
     // Parse priority - prompt interactively only if in interactive mode and using default
@@ -86,11 +84,7 @@ pub fn new(
     store.append_event(&event)?;
 
     println!("{} Created bug {} - {}", "✓".green(), id.cyan(), title);
-    println!(
-        "  Edit with: {} {}",
-        "docket show".dimmed(),
-        id.dimmed()
-    );
+    println!("  Edit with: {} {}", "docket show".dimmed(), id.dimmed());
 
     Ok(())
 }

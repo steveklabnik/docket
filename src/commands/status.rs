@@ -117,9 +117,8 @@ pub fn done(id: &str) -> Result<()> {
     store.append_event(&status_event)?;
 
     println!(
-        "{} {} bug {} ({} -> {})",
+        "{} Completed bug {} ({} -> {})",
         "✓".green(),
-        "Completed",
         bug_id.cyan(),
         format!("{}", old_status).dimmed(),
         format!("{}", Status::Done).green()
@@ -129,11 +128,7 @@ pub fn done(id: &str) -> Result<()> {
     if switched_to_workspace {
         if let Some(ref orig) = original_dir {
             std::env::set_current_dir(orig)?;
-            println!(
-                "{} Returned to {}",
-                "→".blue(),
-                orig.display()
-            );
+            println!("{} Returned to {}", "→".blue(), orig.display());
         }
     }
 
@@ -174,7 +169,14 @@ fn find_workspace_dir(bug_id: &str) -> Option<std::path::PathBuf> {
 fn create_fresh_change_if_needed() -> Result<()> {
     // Check if current change is empty
     let output = std::process::Command::new("jj")
-        .args(["log", "-r", "@", "--no-graph", "-T", "if(empty, \"empty\", \"has_changes\")"])
+        .args([
+            "log",
+            "-r",
+            "@",
+            "--no-graph",
+            "-T",
+            "if(empty, \"empty\", \"has_changes\")",
+        ])
         .output();
 
     match output {
@@ -182,15 +184,10 @@ fn create_fresh_change_if_needed() -> Result<()> {
             let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if result == "has_changes" {
                 // Current change has content, create a fresh one
-                let new_output = std::process::Command::new("jj")
-                    .args(["new"])
-                    .output()?;
+                let new_output = std::process::Command::new("jj").args(["new"]).output()?;
 
                 if new_output.status.success() {
-                    println!(
-                        "{} Created fresh change for next task",
-                        "→".blue()
-                    );
+                    println!("{} Created fresh change for next task", "→".blue());
                 } else {
                     // Log the error but don't fail the done command
                     let stderr = String::from_utf8_lossy(&new_output.stderr);
@@ -295,4 +292,3 @@ fn get_current_change_id() -> Result<Option<String>> {
         _ => Ok(None),
     }
 }
-

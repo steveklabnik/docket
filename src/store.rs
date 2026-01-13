@@ -92,7 +92,11 @@ impl Store {
             match event::derive_bug(&events) {
                 Ok(bug) => bugs.push(bug),
                 Err(e) => {
-                    eprintln!("warning: failed to derive bug from {}: {}", path.display(), e);
+                    eprintln!(
+                        "warning: failed to derive bug from {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
             }
         }

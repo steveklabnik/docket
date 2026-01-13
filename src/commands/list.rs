@@ -4,7 +4,11 @@ use colored::Colorize;
 use crate::bug::{Priority, Status};
 use crate::store::Store;
 
-pub fn list(status_filter: Option<&str>, priority_filter: Option<&str>, show_all: bool) -> Result<()> {
+pub fn list(
+    status_filter: Option<&str>,
+    priority_filter: Option<&str>,
+    show_all: bool,
+) -> Result<()> {
     let store = Store::open()?;
     let bugs = store.list_bugs()?;
 

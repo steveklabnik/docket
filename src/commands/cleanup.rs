@@ -26,9 +26,9 @@ fn cleanup_explicit(id: &str) -> Result<()> {
 /// Find and clean up all workspaces whose changes have been merged to trunk
 fn cleanup_merged() -> Result<()> {
     let repo_root = get_repo_root()?;
-    let parent_dir = Path::new(&repo_root).parent().ok_or_else(|| {
-        anyhow!("could not determine parent directory of repo")
-    })?;
+    let parent_dir = Path::new(&repo_root)
+        .parent()
+        .ok_or_else(|| anyhow!("could not determine parent directory of repo"))?;
 
     // Find all ws-* directories
     let workspaces = find_workspaces(parent_dir)?;
@@ -50,23 +50,23 @@ fn cleanup_merged() -> Result<()> {
 
     for workspace_name in workspaces {
         // Extract bug ID from workspace name (ws-{bug_id} -> bug_id)
-        let bug_id = workspace_name.strip_prefix("ws-").unwrap_or(&workspace_name);
+        let bug_id = workspace_name
+            .strip_prefix("ws-")
+            .unwrap_or(&workspace_name);
 
         match should_cleanup_workspace(bug_id, &repo_root) {
-            Ok(true) => {
-                match cleanup_workspace(bug_id) {
-                    Ok(()) => cleaned_count += 1,
-                    Err(e) => {
-                        eprintln!(
-                            "{} Failed to clean up {}: {}",
-                            "!".yellow(),
-                            workspace_name.cyan(),
-                            e
-                        );
-                        skipped_count += 1;
-                    }
+            Ok(true) => match cleanup_workspace(bug_id) {
+                Ok(()) => cleaned_count += 1,
+                Err(e) => {
+                    eprintln!(
+                        "{} Failed to clean up {}: {}",
+                        "!".yellow(),
+                        workspace_name.cyan(),
+                        e
+                    );
+                    skipped_count += 1;
                 }
-            }
+            },
             Ok(false) => {
                 println!(
                     "{} Skipping {} - changes not yet merged",
@@ -137,7 +137,9 @@ fn should_cleanup_workspace(bug_id: &str, repo_root: &str) -> Result<bool> {
     }
 
     // Check if all linked changes are in trunk
-    let all_merged = changes.iter().all(|change_id| is_merged_to_trunk(change_id, repo_root));
+    let all_merged = changes
+        .iter()
+        .all(|change_id| is_merged_to_trunk(change_id, repo_root));
 
     Ok(all_merged)
 }

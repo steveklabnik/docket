@@ -507,7 +507,13 @@ mod update_command {
 
         docket_cmd()
             .current_dir(dir.path())
-            .args(["new", "--title", "Priority update test", "--priority", "low"])
+            .args([
+                "new",
+                "--title",
+                "Priority update test",
+                "--priority",
+                "low",
+            ])
             .assert()
             .success();
 

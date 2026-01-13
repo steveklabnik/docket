@@ -24,3 +24,10 @@ toml = "0.8"
 tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/docket-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"

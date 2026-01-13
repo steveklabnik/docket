@@ -68,7 +68,8 @@ pub fn update(
     if let Some(new_priority) = priority {
         // Check if priority actually changed
         if new_priority != bug.metadata.priority {
-            let event = Event::priority_changed(bug_id.clone(), bug.metadata.priority, new_priority);
+            let event =
+                Event::priority_changed(bug_id.clone(), bug.metadata.priority, new_priority);
             store.append_event(&event)?;
         }
     }

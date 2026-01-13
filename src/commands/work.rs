@@ -127,10 +127,7 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
     if use_auto {
         // Prompt is a positional argument, not a flag
         claude_args.push("/docket:implement");
-        println!(
-            "{} Auto-running /docket:implement skill",
-            "→".blue()
-        );
+        println!("{} Auto-running /docket:implement skill", "→".blue());
     }
 
     println!("{} Launching Claude Code...", "→".blue());

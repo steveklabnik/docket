@@ -102,7 +102,8 @@ pub fn read_events(path: &Path) -> Result<Vec<Event>> {
         return Ok(Vec::new());
     }
 
-    let file = fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let file =
+        fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
     let reader = BufReader::new(file);
     let mut events = Vec::new();
 

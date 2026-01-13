@@ -18,8 +18,7 @@ pub fn migrate() -> Result<()> {
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("invalid path encoding"))?;
 
-    let md_files: Vec<_> = glob::glob(pattern_str)?
-        .collect::<Result<Vec<_>, _>>()?;
+    let md_files: Vec<_> = glob::glob(pattern_str)?.collect::<Result<Vec<_>, _>>()?;
 
     if md_files.is_empty() {
         println!("{} No markdown bugs to migrate", "→".blue());
@@ -99,10 +98,7 @@ pub fn migrate() -> Result<()> {
     );
 
     if migrated > 0 {
-        println!(
-            "\n{} You can now delete the .md files with:",
-            "→".blue()
-        );
+        println!("\n{} You can now delete the .md files with:", "→".blue());
         println!("    rm {}/*.md", bugs_dir.display());
     }
 

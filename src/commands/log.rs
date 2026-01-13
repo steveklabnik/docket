@@ -44,7 +44,11 @@ pub fn log(id: &str) -> Result<()> {
                     "status_changed".yellow(),
                     actor.dimmed()
                 );
-                println!("    {} -> {}", format!("{}", from).dimmed(), format!("{}", to).green());
+                println!(
+                    "    {} -> {}",
+                    format!("{}", from).dimmed(),
+                    format!("{}", to).green()
+                );
             }
             EventData::Updated { title, body } => {
                 println!(

@@ -24,7 +24,9 @@ pub fn sweep() -> Result<()> {
         }
 
         // Check if all linked changes are in trunk
-        let all_merged = changes.iter().all(|change_id| is_merged_to_trunk(change_id));
+        let all_merged = changes
+            .iter()
+            .all(|change_id| is_merged_to_trunk(change_id));
 
         if all_merged {
             let old_status = bug.status().clone();
@@ -66,7 +68,14 @@ fn is_merged_to_trunk(change_id: &str) -> bool {
     // Use jj to check if the change is an ancestor of trunk
     // Check if change is reachable from trunk bookmark using ::trunk & change_id
     let output = Command::new("jj")
-        .args(["log", "-r", &format!("::trunk & {}", change_id), "--no-graph", "-T", "change_id"])
+        .args([
+            "log",
+            "-r",
+            &format!("::trunk & {}", change_id),
+            "--no-graph",
+            "-T",
+            "change_id",
+        ])
         .output();
 
     match output {
