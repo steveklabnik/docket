@@ -6,20 +6,171 @@ use std::process::Command;
 
 use crate::store::Store;
 
-pub fn cleanup(id: &str) -> Result<()> {
+/// Main entry point - routes to explicit or auto cleanup
+pub fn cleanup(id: Option<&str>) -> Result<()> {
+    match id {
+        Some(id) => cleanup_explicit(id),
+        None => cleanup_merged(),
+    }
+}
+
+/// Clean up a specific workspace by bug ID
+fn cleanup_explicit(id: &str) -> Result<()> {
     let store = Store::open()?;
     let bug = store.get_bug(id)?;
 
     let bug_id = bug.id().to_string();
-    let workspace_name = format!("ws-{}", bug_id);
+    cleanup_workspace(&bug_id)
+}
 
+/// Find and clean up all workspaces whose changes have been merged to trunk
+fn cleanup_merged() -> Result<()> {
+    let repo_root = get_repo_root()?;
+    let parent_dir = Path::new(&repo_root).parent().ok_or_else(|| {
+        anyhow!("could not determine parent directory of repo")
+    })?;
+
+    // Find all ws-* directories
+    let workspaces = find_workspaces(parent_dir)?;
+
+    if workspaces.is_empty() {
+        println!("{} No workspaces found", "→".blue());
+        return Ok(());
+    }
+
+    println!(
+        "{} Found {} workspace{}",
+        "→".blue(),
+        workspaces.len(),
+        if workspaces.len() == 1 { "" } else { "s" }
+    );
+
+    let mut cleaned_count = 0;
+    let mut skipped_count = 0;
+
+    for workspace_name in workspaces {
+        // Extract bug ID from workspace name (ws-{bug_id} -> bug_id)
+        let bug_id = workspace_name.strip_prefix("ws-").unwrap_or(&workspace_name);
+
+        match should_cleanup_workspace(bug_id, &repo_root) {
+            Ok(true) => {
+                match cleanup_workspace(bug_id) {
+                    Ok(()) => cleaned_count += 1,
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to clean up {}: {}",
+                            "!".yellow(),
+                            workspace_name.cyan(),
+                            e
+                        );
+                        skipped_count += 1;
+                    }
+                }
+            }
+            Ok(false) => {
+                println!(
+                    "{} Skipping {} - changes not yet merged",
+                    "→".blue(),
+                    workspace_name.cyan()
+                );
+                skipped_count += 1;
+            }
+            Err(e) => {
+                println!(
+                    "{} Skipping {} - {}",
+                    "→".blue(),
+                    workspace_name.cyan(),
+                    e.to_string().dimmed()
+                );
+                skipped_count += 1;
+            }
+        }
+    }
+
+    // Summary
+    println!();
+    if cleaned_count > 0 {
+        println!(
+            "{} Cleaned up {} workspace{}",
+            "✓".green(),
+            cleaned_count,
+            if cleaned_count == 1 { "" } else { "s" }
+        );
+    }
+    if skipped_count > 0 && cleaned_count == 0 {
+        println!("{} No workspaces ready for cleanup", "→".blue());
+    }
+
+    Ok(())
+}
+
+/// Find all ws-* directories in the given parent directory
+fn find_workspaces(parent_dir: &Path) -> Result<Vec<String>> {
+    let mut workspaces = Vec::new();
+
+    let entries = fs::read_dir(parent_dir)
+        .with_context(|| format!("failed to read directory {}", parent_dir.display()))?;
+
+    for entry in entries {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+
+        if name.starts_with("ws-") && entry.path().is_dir() {
+            workspaces.push(name.to_string());
+        }
+    }
+
+    Ok(workspaces)
+}
+
+/// Check if a workspace should be cleaned up (all linked changes merged to trunk)
+fn should_cleanup_workspace(bug_id: &str, repo_root: &str) -> Result<bool> {
+    let store = Store::open()?;
+
+    let bug = store.get_bug(bug_id)?;
+    let changes = bug.changes();
+
+    // If no linked changes, don't auto-cleanup (user should use explicit cleanup)
+    if changes.is_empty() {
+        return Err(anyhow!("no linked changes"));
+    }
+
+    // Check if all linked changes are in trunk
+    let all_merged = changes.iter().all(|change_id| is_merged_to_trunk(change_id, repo_root));
+
+    Ok(all_merged)
+}
+
+/// Check if a change ID has been merged to trunk
+fn is_merged_to_trunk(change_id: &str, repo_root: &str) -> bool {
+    // Use jj to check if the change is an ancestor of trunk
+    let output = Command::new("jj")
+        .args([
+            "log",
+            "-r",
+            &format!("::trunk() & {}", change_id),
+            "--no-graph",
+            "-T",
+            "change_id",
+        ])
+        .current_dir(repo_root)
+        .output();
+
+    match output {
+        Ok(output) => !output.stdout.is_empty(),
+        Err(_) => false,
+    }
+}
+
+/// Get the jj repo root
+fn get_repo_root() -> Result<String> {
     // Check if jj is available
     let jj_check = Command::new("jj").arg("--version").output();
     if jj_check.is_err() {
         return Err(anyhow!("jj is not installed or not in PATH"));
     }
 
-    // Get repo root to find workspace path
     let repo_root = Command::new("jj")
         .args(["workspace", "root"])
         .output()
@@ -29,9 +180,15 @@ pub fn cleanup(id: &str) -> Result<()> {
         return Err(anyhow!("not in a jj repository"));
     }
 
-    let repo_root = String::from_utf8_lossy(&repo_root.stdout)
+    Ok(String::from_utf8_lossy(&repo_root.stdout)
         .trim()
-        .to_string();
+        .to_string())
+}
+
+/// Clean up a specific workspace by bug ID
+fn cleanup_workspace(bug_id: &str) -> Result<()> {
+    let workspace_name = format!("ws-{}", bug_id);
+    let repo_root = get_repo_root()?;
 
     let workspace_path = format!("{}/../{}", repo_root, workspace_name);
     let workspace_dir = Path::new(&workspace_path);

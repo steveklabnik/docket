@@ -95,8 +95,8 @@ enum Commands {
 
     /// Clean up a workspace after work is complete
     Cleanup {
-        /// Bug ID (prefix match supported)
-        id: String,
+        /// Bug ID (prefix match supported). If not provided, cleans up all merged workspaces.
+        id: Option<String>,
     },
 }
 
@@ -125,6 +125,6 @@ fn main() -> Result<()> {
         } => commands::work(&id, skip_permissions, auto),
         Commands::Link { bug_id, change_id } => commands::link(&bug_id, &change_id),
         Commands::Sweep => commands::sweep(),
-        Commands::Cleanup { id } => commands::cleanup(&id),
+        Commands::Cleanup { id } => commands::cleanup(id.as_deref()),
     }
 }
