@@ -1,5 +1,7 @@
 //! The `done` command workflow for completing bugs.
 
+use std::process::Command;
+
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
@@ -8,6 +10,62 @@ use crate::event::Event;
 use crate::store::Store;
 
 use super::jj;
+
+/// Generate a commit message using Claude Code.
+/// Returns None if Claude fails (caller should fall back to simple message).
+fn generate_commit_message(bug_id: &str) -> Option<String> {
+    println!("{} Generating commit message with Claude...", "→".blue());
+
+    let output = Command::new("claude")
+        .args([
+            "-p",
+            "/docket:describe",
+            "--model",
+            "haiku",
+            "--allowedTools",
+            "Bash,Read",
+        ])
+        .env("DOCKET_BUG", bug_id)
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let message = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if message.is_empty() {
+                eprintln!(
+                    "{} Claude returned empty message, using fallback",
+                    "!".yellow()
+                );
+                None
+            } else {
+                Some(message)
+            }
+        }
+        Ok(output) => {
+            eprintln!(
+                "{} Claude failed (exit {}), using fallback message",
+                "!".yellow(),
+                output.status.code().unwrap_or(-1)
+            );
+            if !output.stderr.is_empty() {
+                eprintln!("{}", String::from_utf8_lossy(&output.stderr).dimmed());
+            }
+            None
+        }
+        Err(e) => {
+            eprintln!(
+                "{} Failed to run Claude ({}), using fallback message",
+                "!".yellow(),
+                e
+            );
+            None
+        }
+    }
+}
+
+fn fallback_commit_message(bug_title: &str, bug_id: &str) -> String {
+    format!("Implement {} ({})", bug_title, bug_id)
+}
 
 /// Mark a bug as done, handling workspace integration if applicable.
 pub fn done(id: &str) -> Result<()> {
@@ -62,8 +120,9 @@ pub fn done(id: &str) -> Result<()> {
             bug_id.cyan()
         );
 
-        // Set commit message (jj describe auto-snapshots, capturing the StatusChanged event)
-        let commit_message = format!("Implement {} ({})", bug_title, bug_id);
+        // Generate commit message using Claude, with fallback to simple message
+        let commit_message = generate_commit_message(&bug_id)
+            .unwrap_or_else(|| fallback_commit_message(&bug_title, &bug_id));
         jj::describe(&commit_message)?;
     }
 
