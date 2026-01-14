@@ -4,7 +4,7 @@ You are helping implement a bug tracked by docket. Read the current bug context 
 
 ## Instructions
 
-1. **Get the bug context** by running `docket show $DOCKET_BUG` to understand what needs to be implemented. This will display:
+1. **Get the bug context** by running `cargo run -- show $DOCKET_BUG` to understand what needs to be implemented. This will display:
    - The bug title and ID
    - Status and priority
    - The body containing Goal, Acceptance Criteria, Context, and Log sections
@@ -20,11 +20,11 @@ You are helping implement a bug tracked by docket. Read the current bug context 
    - Follow best practices for the codebase
 
 4. **Update progress** as you work:
-   - Use `docket update $DOCKET_BUG` to update the bug body with progress
+   - Use `cargo run -- update $DOCKET_BUG` to update the bug body with progress
    - Add timestamped entries to the Log section describing what was accomplished
    - Format log entries as: `- YYYY-MM-DD: Description of progress`
    - Check off acceptance criteria by changing `- [ ]` to `- [x]`
 
 ## Getting Started
 
-Begin by running `docket show $DOCKET_BUG` and presenting a summary of the bug to the user, then propose an implementation plan.
+Begin by running `cargo run -- show $DOCKET_BUG` and presenting a summary of the bug to the user, then propose an implementation plan.
