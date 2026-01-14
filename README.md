@@ -6,16 +6,29 @@ Docket is a command-line bug/task tracker designed to integrate with [Claude Cod
 
 ## Installation
 
+> **Note:** This project is *not* the `docket` crate on crates.io (that's an unrelated project).
+
+### Using cargo-binstall (recommended)
+
+If you have [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) installed, you can download pre-built binaries:
+
 ```bash
-cargo install --path .
+cargo binstall --git https://github.com/steveklabnik/docket docket
 ```
 
-Or build from source:
+### From source
+
+```bash
+cargo install --git https://github.com/steveklabnik/docket
+```
+
+### Manual build
 
 ```bash
 git clone https://github.com/steveklabnik/docket
 cd docket
 cargo build --release
+# Binary is at target/release/docket
 ```
 
 ## Quick Start
