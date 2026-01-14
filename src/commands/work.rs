@@ -142,10 +142,21 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         .status()
         .context("failed to launch claude")?;
 
-    // After Claude exits, set a descriptive commit message so the workspace
-    // is identifiable from trunk in `jj log` output
+    // After Claude exits, run cargo fmt to ensure code is formatted
     println!();
-    println!("{} Claude exited, updating commit message...", "→".blue());
+    println!("{} Claude exited, running cargo fmt...", "→".blue());
+
+    let fmt_result = Command::new("cargo")
+        .args(["fmt"])
+        .status()
+        .context("failed to run cargo fmt")?;
+
+    if !fmt_result.success() {
+        eprintln!("{} Warning: cargo fmt failed", "!".yellow());
+    }
+
+    // Set a descriptive commit message so the workspace is identifiable from trunk
+    println!("{} Updating commit message...", "→".blue());
 
     let wip_message = format!("wip: {} - {}", bug_id, bug_title);
     let describe_result = Command::new("jj")
