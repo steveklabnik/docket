@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::path::Path;
@@ -16,7 +16,7 @@ pub fn migrate() -> Result<()> {
     let pattern = bugs_dir.join("*.md");
     let pattern_str = pattern
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("invalid path encoding"))?;
+        .ok_or_else(|| anyhow!("invalid path encoding"))?;
 
     let md_files: Vec<_> = glob::glob(pattern_str)?.collect::<Result<Vec<_>, _>>()?;
 
@@ -38,7 +38,7 @@ pub fn migrate() -> Result<()> {
         let bug_id = md_path
             .file_stem()
             .and_then(|s| s.to_str())
-            .ok_or_else(|| anyhow::anyhow!("invalid file name"))?;
+            .ok_or_else(|| anyhow!("invalid file name"))?;
 
         // Check if JSONL already exists
         let jsonl_path = bugs_dir.join(format!("{}.jsonl", bug_id));

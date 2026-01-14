@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::io::{self, Read};
@@ -32,9 +32,10 @@ pub fn update(
 
     // Parse priority if provided
     let priority: Option<Priority> = match priority_str {
-        Some(p) => Some(p.parse().map_err(|_| {
-            anyhow::anyhow!("invalid priority '{}', must be low, medium, or high", p)
-        })?),
+        Some(p) => Some(
+            p.parse()
+                .map_err(|_| anyhow!("invalid priority '{}', must be low, medium, or high", p))?,
+        ),
         None => None,
     };
 

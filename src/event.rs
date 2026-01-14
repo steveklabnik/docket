@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
@@ -126,14 +126,14 @@ pub fn read_events(path: &Path) -> Result<Vec<Event>> {
 /// Derive current bug state by replaying events
 pub fn derive_bug(events: &[Event]) -> Result<Bug> {
     if events.is_empty() {
-        return Err(anyhow::anyhow!("no events to derive bug from"));
+        return Err(anyhow!("no events to derive bug from"));
     }
 
     // Find the Created event to get initial state
     let created = events
         .iter()
         .find(|e| matches!(e.data, EventData::Created { .. }))
-        .ok_or_else(|| anyhow::anyhow!("no Created event found"))?;
+        .ok_or_else(|| anyhow!("no Created event found"))?;
 
     let (initial_title, initial_priority, initial_body) = match &created.data {
         EventData::Created {
