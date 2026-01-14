@@ -53,7 +53,7 @@ enum Commands {
         id: String,
     },
 
-    /// Update a bug's title, body, or priority
+    /// Update a bug's title, body, priority, or status
     Update {
         /// Bug ID (prefix match supported)
         id: String,
@@ -69,6 +69,10 @@ enum Commands {
         /// New priority level (low, medium, high)
         #[arg(short, long)]
         priority: Option<String>,
+
+        /// New status (draft, approved, in-progress, done, not-planned)
+        #[arg(short, long)]
+        status: Option<String>,
     },
 
     /// Mark a bug as approved for work
@@ -147,7 +151,14 @@ fn main() -> Result<()> {
             title,
             body,
             priority,
-        } => commands::update(&id, title, body.as_deref(), priority.as_deref()),
+            status,
+        } => commands::update(
+            &id,
+            title,
+            body.as_deref(),
+            priority.as_deref(),
+            status.as_deref(),
+        ),
         Commands::Approve { id } => commands::approve(&id),
         Commands::Start { id } => commands::start(&id),
         Commands::Done { id } => commands::done(&id),

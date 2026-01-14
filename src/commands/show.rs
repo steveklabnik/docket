@@ -19,6 +19,7 @@ pub fn show(id: &str) -> Result<()> {
         Status::Approved => status_str.green(),
         Status::InProgress => status_str.yellow(),
         Status::Done => status_str.blue(),
+        Status::NotPlanned => status_str.red(),
     };
 
     println!("{:12} {}", "Status:".dimmed(), status_colored);

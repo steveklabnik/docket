@@ -43,6 +43,9 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         Status::Done => {
             return Err(anyhow!("bug {} is already done", bug.id()));
         }
+        Status::NotPlanned => {
+            return Err(anyhow!("bug {} was closed as not-planned", bug.id()));
+        }
     }
 
     let bug_id = bug.id().to_string();

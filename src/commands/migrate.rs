@@ -115,6 +115,9 @@ fn migrate_status(jsonl_path: &Path, bug: &Bug) -> Result<()> {
             (Status::Approved, Status::InProgress),
             (Status::InProgress, Status::Done),
         ],
+        // NotPlanned can be reached directly from any non-terminal state
+        // For migration, we just need to record one transition
+        Status::NotPlanned => vec![(Status::Draft, Status::NotPlanned)],
     };
 
     for (from, to) in transitions {

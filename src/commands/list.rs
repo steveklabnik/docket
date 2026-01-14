@@ -25,8 +25,8 @@ pub fn list(
     let filtered: Vec<_> = bugs
         .iter()
         .filter(|bug| {
-            // By default, hide 'done' bugs unless --all is specified
-            if !show_all && matches!(bug.status(), Status::Done) {
+            // By default, hide terminal states (done, not-planned) unless --all is specified
+            if !show_all && matches!(bug.status(), Status::Done | Status::NotPlanned) {
                 return false;
             }
 
@@ -71,6 +71,7 @@ pub fn list(
             Status::Approved => status_str.green(),
             Status::InProgress => status_str.yellow(),
             Status::Done => status_str.blue(),
+            Status::NotPlanned => status_str.red(),
         };
 
         let priority_str = format!("{}", bug.priority());

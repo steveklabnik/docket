@@ -13,6 +13,7 @@ pub enum Status {
     Approved,
     InProgress,
     Done,
+    NotPlanned,
 }
 
 impl fmt::Display for Status {
@@ -22,6 +23,7 @@ impl fmt::Display for Status {
             Status::Approved => write!(f, "approved"),
             Status::InProgress => write!(f, "in-progress"),
             Status::Done => write!(f, "done"),
+            Status::NotPlanned => write!(f, "not-planned"),
         }
     }
 }
@@ -35,6 +37,7 @@ impl FromStr for Status {
             "approved" => Ok(Status::Approved),
             "in-progress" | "in_progress" | "inprogress" => Ok(Status::InProgress),
             "done" => Ok(Status::Done),
+            "not-planned" | "not_planned" | "notplanned" => Ok(Status::NotPlanned),
             _ => Err(anyhow!("unknown status: {}", s)),
         }
     }
@@ -168,6 +171,26 @@ mod tests {
     }
 
     #[test]
+    fn status_from_str_not_planned_variants() {
+        assert!(matches!(
+            Status::from_str("not-planned").unwrap(),
+            Status::NotPlanned
+        ));
+        assert!(matches!(
+            Status::from_str("not_planned").unwrap(),
+            Status::NotPlanned
+        ));
+        assert!(matches!(
+            Status::from_str("notplanned").unwrap(),
+            Status::NotPlanned
+        ));
+        assert!(matches!(
+            Status::from_str("NOT-PLANNED").unwrap(),
+            Status::NotPlanned
+        ));
+    }
+
+    #[test]
     fn status_from_str_unknown_fails() {
         assert!(Status::from_str("invalid").is_err());
         assert!(Status::from_str("").is_err());
@@ -179,6 +202,7 @@ mod tests {
         assert_eq!(Status::Approved.to_string(), "approved");
         assert_eq!(Status::InProgress.to_string(), "in-progress");
         assert_eq!(Status::Done.to_string(), "done");
+        assert_eq!(Status::NotPlanned.to_string(), "not-planned");
     }
 
     #[test]
