@@ -107,6 +107,10 @@ enum Commands {
     Log {
         /// Bug ID (prefix match supported)
         id: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Migrate markdown bugs to JSONL format (one-time migration)
@@ -152,7 +156,7 @@ fn main() -> Result<()> {
             skip_permissions,
             auto,
         } => commands::work(&id, skip_permissions, auto),
-        Commands::Log { id } => commands::log(&id),
+        Commands::Log { id, json } => commands::log(&id, json),
         Commands::Migrate => commands::migrate(),
         Commands::Cleanup { id } => commands::cleanup(id.as_deref()),
     }

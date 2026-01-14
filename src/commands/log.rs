@@ -4,7 +4,7 @@ use colored::Colorize;
 use crate::event::EventData;
 use crate::store::Store;
 
-pub fn log(id: &str) -> Result<()> {
+pub fn log(id: &str, json: bool) -> Result<()> {
     let store = Store::open()?;
 
     // Resolve prefix to full ID
@@ -12,6 +12,12 @@ pub fn log(id: &str) -> Result<()> {
 
     // Get all events for this bug
     let events = store.get_events(&full_id)?;
+
+    if json {
+        let json_output = serde_json::to_string_pretty(&events)?;
+        println!("{}", json_output);
+        return Ok(());
+    }
 
     if events.is_empty() {
         println!("{} No events found for bug {}", "→".blue(), full_id.cyan());
