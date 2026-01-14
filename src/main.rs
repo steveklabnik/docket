@@ -117,9 +117,6 @@ enum Commands {
         json: bool,
     },
 
-    /// Migrate markdown bugs to JSONL format (one-time migration)
-    Migrate,
-
     /// Clean up a workspace after work is complete
     Cleanup {
         /// Bug ID (prefix match supported). If not provided, cleans up workspaces for done bugs.
@@ -168,7 +165,6 @@ fn main() -> Result<()> {
             auto,
         } => commands::work(&id, skip_permissions, auto),
         Commands::Log { id, json } => commands::log(&id, json),
-        Commands::Migrate => commands::migrate(),
         Commands::Cleanup { id } => commands::cleanup(id.as_deref()),
     }
 }

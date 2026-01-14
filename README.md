@@ -106,7 +106,6 @@ This generates a commit message using Claude's `/docket:describe` skill and upda
 | `work`    | Start working on a bug (creates workspace + Claude)   |
 | `log`     | Show event history for a bug                          |
 | `cleanup` | Clean up a workspace after work is complete           |
-| `migrate` | Migrate from old markdown format to JSONL             |
 
 Run `docket <command> --help` for detailed options.
 

@@ -23,7 +23,6 @@ src/
     ├── update.rs
     ├── log.rs
     ├── work.rs
-    ├── migrate.rs
     ├── cleanup.rs
     └── status/
         ├── mod.rs
