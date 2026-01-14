@@ -78,25 +78,6 @@ pub fn describe(message: &str) -> Result<()> {
     }
 }
 
-/// Get the current change ID.
-pub fn get_current_change_id() -> Result<Option<String>> {
-    let output = std::process::Command::new("jj")
-        .args(["log", "-r", "@", "--no-graph", "-T", "change_id"])
-        .output();
-
-    match output {
-        Ok(output) if output.status.success() => {
-            let change_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if change_id.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(change_id))
-            }
-        }
-        _ => Ok(None),
-    }
-}
-
 /// Check if current jj change is empty and create a new one if needed.
 pub fn create_fresh_change_if_needed() -> Result<()> {
     // Check if current change is empty

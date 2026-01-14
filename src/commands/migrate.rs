@@ -75,12 +75,6 @@ pub fn migrate() -> Result<()> {
         // If status is not Draft, emit StatusChanged events
         migrate_status(&jsonl_path, &bug)?;
 
-        // If there are linked changes, emit ChangeLinked events
-        for change_id in bug.changes() {
-            let link_event = Event::change_linked(bug.id().to_string(), change_id.clone());
-            crate::event::append_event(&jsonl_path, &link_event)?;
-        }
-
         println!(
             "{} Migrated {} - {}",
             "✓".green(),

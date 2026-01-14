@@ -103,15 +103,6 @@ enum Commands {
         auto: bool,
     },
 
-    /// Link a jj change to a bug
-    Link {
-        /// Bug ID (prefix match supported)
-        bug_id: String,
-
-        /// jj change ID to link
-        change_id: String,
-    },
-
     /// Show event history for a bug
     Log {
         /// Bug ID (prefix match supported)
@@ -121,12 +112,9 @@ enum Commands {
     /// Migrate markdown bugs to JSONL format (one-time migration)
     Migrate,
 
-    /// Auto-close bugs whose linked changes have been merged to trunk
-    Sweep,
-
     /// Clean up a workspace after work is complete
     Cleanup {
-        /// Bug ID (prefix match supported). If not provided, cleans up all merged workspaces.
+        /// Bug ID (prefix match supported). If not provided, cleans up workspaces for done bugs.
         id: Option<String>,
     },
 }
@@ -164,10 +152,8 @@ fn main() -> Result<()> {
             skip_permissions,
             auto,
         } => commands::work(&id, skip_permissions, auto),
-        Commands::Link { bug_id, change_id } => commands::link(&bug_id, &change_id),
         Commands::Log { id } => commands::log(&id),
         Commands::Migrate => commands::migrate(),
-        Commands::Sweep => commands::sweep(),
         Commands::Cleanup { id } => commands::cleanup(id.as_deref()),
     }
 }

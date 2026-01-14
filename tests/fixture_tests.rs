@@ -29,6 +29,7 @@ fn completed_bug_fixture() {
     let path = fixture_path("completed_bug.jsonl");
     let events = read_events(&path).unwrap();
 
+    // 5 events: created + 3 status changes + 1 deprecated change_linked (ignored)
     assert_eq!(events.len(), 5);
 
     let bug = derive_bug(&events).unwrap();
@@ -37,7 +38,6 @@ fn completed_bug_fixture() {
     assert_eq!(bug.metadata.title, "Completed bug example");
     assert!(matches!(bug.metadata.status, Status::Done));
     assert_eq!(bug.metadata.priority, Priority::High);
-    assert_eq!(bug.metadata.changes, vec!["abc123xyz"]);
 }
 
 #[test]

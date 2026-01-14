@@ -63,18 +63,6 @@ pub fn done(id: &str) -> Result<()> {
         // 2. Generate and set commit message
         let commit_message = format!("Implement {} ({})", bug_title, bug_id);
         jj::describe(&commit_message)?;
-
-        // 3. Link the change to the bug
-        if let Some(change_id) = jj::get_current_change_id()? {
-            let link_event = Event::change_linked(bug_id.clone(), change_id.clone());
-            store.append_event(&link_event)?;
-            println!(
-                "{} Linked change {} to bug {}",
-                "✓".green(),
-                change_id.cyan(),
-                bug_id.cyan()
-            );
-        }
     }
 
     // Emit StatusChanged event (while still in workspace if we switched)

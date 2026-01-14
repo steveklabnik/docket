@@ -79,8 +79,6 @@ pub struct BugMetadata {
     pub status: Status,
     pub priority: Priority,
     pub created: DateTime<Utc>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub changes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,10 +120,6 @@ impl Bug {
 
     pub fn priority(&self) -> &Priority {
         &self.metadata.priority
-    }
-
-    pub fn changes(&self) -> &[String] {
-        &self.metadata.changes
     }
 }
 
@@ -247,25 +241,6 @@ Fix the thing."#;
     }
 
     #[test]
-    fn bug_parse_with_changes() {
-        let content = r#"---
-id: test2
-title: Bug with Changes
-status: in-progress
-priority: medium
-created: 2024-01-01T00:00:00Z
-changes:
-  - change1
-  - change2
----
-Body content."#;
-
-        let bug = Bug::parse(content).unwrap();
-
-        assert_eq!(bug.metadata.changes, vec!["change1", "change2"]);
-    }
-
-    #[test]
     fn bug_parse_invalid_no_frontmatter() {
         let content = "Just some text without frontmatter";
         assert!(Bug::parse(content).is_err());
@@ -286,8 +261,6 @@ title: Accessor Test
 status: approved
 priority: low
 created: 2024-01-01T00:00:00Z
-changes:
-  - ch1
 ---
 Body"#;
 
@@ -297,6 +270,5 @@ Body"#;
         assert_eq!(bug.title(), "Accessor Test");
         assert!(matches!(bug.status(), Status::Approved));
         assert_eq!(bug.priority(), &Priority::Low);
-        assert_eq!(bug.changes(), &["ch1"]);
     }
 }

@@ -28,6 +28,9 @@ pub enum EventData {
         from: Priority,
         to: Priority,
     },
+    /// Deprecated: linked changes are no longer used.
+    /// Kept for backwards compatibility with existing event logs.
+    #[serde(rename = "change_linked")]
     ChangeLinked {
         change_id: String,
     },
@@ -72,10 +75,6 @@ impl Event {
 
     pub fn updated(bug_id: String, title: Option<String>, body: Option<String>) -> Self {
         Self::new(bug_id, EventData::Updated { title, body })
-    }
-
-    pub fn change_linked(bug_id: String, change_id: String) -> Self {
-        Self::new(bug_id, EventData::ChangeLinked { change_id })
     }
 
     pub fn priority_changed(bug_id: String, from: Priority, to: Priority) -> Self {
@@ -151,7 +150,6 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             status: Status::Draft,
             priority: initial_priority,
             created: created.timestamp,
-            changes: Vec::new(),
         },
         body: initial_body,
     };
@@ -176,10 +174,8 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             EventData::PriorityChanged { to, .. } => {
                 bug.metadata.priority = to.clone();
             }
-            EventData::ChangeLinked { change_id } => {
-                if !bug.metadata.changes.contains(change_id) {
-                    bug.metadata.changes.push(change_id.clone());
-                }
+            EventData::ChangeLinked { .. } => {
+                // Deprecated: linked changes are no longer used, ignore
             }
         }
     }
@@ -227,7 +223,6 @@ mod tests {
         assert!(matches!(bug.metadata.status, Status::Draft));
         assert_eq!(bug.metadata.priority, Priority::High);
         assert_eq!(bug.body, "Bug body");
-        assert!(bug.metadata.changes.is_empty());
     }
 
     #[test]
@@ -326,72 +321,6 @@ mod tests {
         let bug = derive_bug(&events).unwrap();
 
         assert_eq!(bug.metadata.priority, Priority::High);
-    }
-
-    #[test]
-    fn derive_bug_with_linked_changes() {
-        let events = vec![
-            make_event(
-                "abc1",
-                EventData::Created {
-                    title: "Test".to_string(),
-                    priority: Priority::Medium,
-                    body: "Body".to_string(),
-                },
-                ts(1000),
-            ),
-            make_event(
-                "abc1",
-                EventData::ChangeLinked {
-                    change_id: "change1".to_string(),
-                },
-                ts(2000),
-            ),
-            make_event(
-                "abc1",
-                EventData::ChangeLinked {
-                    change_id: "change2".to_string(),
-                },
-                ts(3000),
-            ),
-        ];
-
-        let bug = derive_bug(&events).unwrap();
-
-        assert_eq!(bug.metadata.changes, vec!["change1", "change2"]);
-    }
-
-    #[test]
-    fn derive_bug_deduplicates_linked_changes() {
-        let events = vec![
-            make_event(
-                "abc1",
-                EventData::Created {
-                    title: "Test".to_string(),
-                    priority: Priority::Medium,
-                    body: "Body".to_string(),
-                },
-                ts(1000),
-            ),
-            make_event(
-                "abc1",
-                EventData::ChangeLinked {
-                    change_id: "change1".to_string(),
-                },
-                ts(2000),
-            ),
-            make_event(
-                "abc1",
-                EventData::ChangeLinked {
-                    change_id: "change1".to_string(),
-                },
-                ts(3000),
-            ),
-        ];
-
-        let bug = derive_bug(&events).unwrap();
-
-        assert_eq!(bug.metadata.changes, vec!["change1"]);
     }
 
     #[test]

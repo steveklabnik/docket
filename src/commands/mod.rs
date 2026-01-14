@@ -1,25 +1,21 @@
 pub mod cleanup;
 pub mod init;
-pub mod link;
 pub mod list;
 pub mod log;
 pub mod migrate;
 pub mod new;
 pub mod show;
 pub mod status;
-pub mod sweep;
 pub mod update;
 pub mod work;
 
 pub use cleanup::cleanup;
 pub use init::init;
-pub use link::link;
 pub use list::list;
 pub use log::log;
 pub use migrate::migrate;
 pub use new::new;
 pub use show::show;
 pub use status::{approve, done, start};
-pub use sweep::sweep;
 pub use update::update;
 pub use work::work;

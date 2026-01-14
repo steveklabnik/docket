@@ -4,13 +4,14 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use crate::bug::Status;
 use crate::store::Store;
 
 /// Main entry point - routes to explicit or auto cleanup
 pub fn cleanup(id: Option<&str>) -> Result<()> {
     match id {
         Some(id) => cleanup_explicit(id),
-        None => cleanup_merged(),
+        None => cleanup_done(),
     }
 }
 
@@ -23,8 +24,8 @@ fn cleanup_explicit(id: &str) -> Result<()> {
     cleanup_workspace(&bug_id)
 }
 
-/// Find and clean up all workspaces whose changes have been merged to trunk
-fn cleanup_merged() -> Result<()> {
+/// Find and clean up all workspaces whose bugs are marked done
+fn cleanup_done() -> Result<()> {
     let repo_root = get_repo_root()?;
     let parent_dir = Path::new(&repo_root)
         .parent()
@@ -48,13 +49,15 @@ fn cleanup_merged() -> Result<()> {
     let mut cleaned_count = 0;
     let mut skipped_count = 0;
 
+    let store = Store::open()?;
+
     for workspace_name in workspaces {
         // Extract bug ID from workspace name (ws-{bug_id} -> bug_id)
         let bug_id = workspace_name
             .strip_prefix("ws-")
             .unwrap_or(&workspace_name);
 
-        match should_cleanup_workspace(bug_id, &repo_root) {
+        match should_cleanup_workspace(bug_id, &store) {
             Ok(true) => match cleanup_workspace(bug_id) {
                 Ok(()) => cleaned_count += 1,
                 Err(e) => {
@@ -69,7 +72,7 @@ fn cleanup_merged() -> Result<()> {
             },
             Ok(false) => {
                 println!(
-                    "{} Skipping {} - changes not yet merged",
+                    "{} Skipping {} - bug not done",
                     "→".blue(),
                     workspace_name.cyan()
                 );
@@ -124,45 +127,10 @@ fn find_workspaces(parent_dir: &Path) -> Result<Vec<String>> {
     Ok(workspaces)
 }
 
-/// Check if a workspace should be cleaned up (all linked changes merged to trunk)
-fn should_cleanup_workspace(bug_id: &str, repo_root: &str) -> Result<bool> {
-    let store = Store::open()?;
-
+/// Check if a workspace should be cleaned up (bug is done)
+fn should_cleanup_workspace(bug_id: &str, store: &Store) -> Result<bool> {
     let bug = store.get_bug(bug_id)?;
-    let changes = bug.changes();
-
-    // If no linked changes, don't auto-cleanup (user should use explicit cleanup)
-    if changes.is_empty() {
-        return Err(anyhow!("no linked changes"));
-    }
-
-    // Check if all linked changes are in trunk
-    let all_merged = changes
-        .iter()
-        .all(|change_id| is_merged_to_trunk(change_id, repo_root));
-
-    Ok(all_merged)
-}
-
-/// Check if a change ID has been merged to trunk
-fn is_merged_to_trunk(change_id: &str, repo_root: &str) -> bool {
-    // Use jj to check if the change is an ancestor of trunk
-    let output = Command::new("jj")
-        .args([
-            "log",
-            "-r",
-            &format!("::trunk() & {}", change_id),
-            "--no-graph",
-            "-T",
-            "change_id",
-        ])
-        .current_dir(repo_root)
-        .output();
-
-    match output {
-        Ok(output) => !output.stdout.is_empty(),
-        Err(_) => false,
-    }
+    Ok(matches!(bug.status(), Status::Done))
 }
 
 /// Get the jj repo root
