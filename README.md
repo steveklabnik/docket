@@ -63,7 +63,7 @@ Draft → Approved → InProgress → Done
 
 1. **Draft**: New bugs start here. Use for ideas and rough specs.
 2. **Approved**: Bug is ready to be worked on. (`docket approve <id>`)
-3. **InProgress**: Work has started. (`docket start <id>` or `docket work <id>`)
+3. **InProgress**: Work has started. (`docket work <id>`)
 4. **Done**: Work is complete. (`docket done <id>`)
 
 ### Working with Claude
@@ -101,7 +101,6 @@ This generates a commit message using Claude's `/docket:describe` skill and upda
 | `show`    | Show details of a bug                                 |
 | `update`  | Update a bug's title, body, or priority               |
 | `approve` | Mark a bug as approved for work                       |
-| `start`   | Mark a bug as in-progress                             |
 | `done`    | Mark a bug as done                                    |
 | `work`    | Start working on a bug (creates workspace + Claude)   |
 | `log`     | Show event history for a bug                          |

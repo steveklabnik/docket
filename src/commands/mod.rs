@@ -16,6 +16,6 @@ pub use log::log;
 pub use migrate::migrate;
 pub use new::new;
 pub use show::show;
-pub use status::{approve, done, start};
+pub use status::{approve, done};
 pub use update::update;
 pub use work::work;

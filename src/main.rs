@@ -81,12 +81,6 @@ enum Commands {
         id: String,
     },
 
-    /// Mark a bug as in-progress
-    Start {
-        /// Bug ID (prefix match supported)
-        id: String,
-    },
-
     /// Mark a bug as done
     Done {
         /// Bug ID (prefix match supported)
@@ -160,7 +154,6 @@ fn main() -> Result<()> {
             status.as_deref(),
         ),
         Commands::Approve { id } => commands::approve(&id),
-        Commands::Start { id } => commands::start(&id),
         Commands::Done { id } => commands::done(&id),
         Commands::Work {
             id,

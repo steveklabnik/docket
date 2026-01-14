@@ -45,8 +45,3 @@ fn set_status(id: &str, new_status: Status, action: &str) -> Result<()> {
 pub fn approve(id: &str) -> Result<()> {
     set_status(id, Status::Approved, "Approved")
 }
-
-/// Mark a bug as in-progress.
-pub fn start(id: &str) -> Result<()> {
-    set_status(id, Status::InProgress, "Started")
-}

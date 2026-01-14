@@ -368,9 +368,9 @@ mod status_commands {
     }
 
     #[test]
-    fn start_changes_status() {
+    fn update_status_to_in_progress() {
         let dir = setup_docket_repo();
-        let id = create_bug_and_get_id(&dir, "Start test");
+        let id = create_bug_and_get_id(&dir, "In-progress test");
 
         // First approve
         docket_cmd()
@@ -379,10 +379,10 @@ mod status_commands {
             .assert()
             .success();
 
-        // Then start
+        // Then set status to in-progress via update
         docket_cmd()
             .current_dir(dir.path())
-            .args(["start", &id])
+            .args(["update", &id, "--status", "in-progress"])
             .assert()
             .success();
 
@@ -399,7 +399,7 @@ mod status_commands {
         let dir = setup_docket_repo();
         let id = create_bug_and_get_id(&dir, "Done test");
 
-        // Approve then start
+        // Approve then set to in-progress
         docket_cmd()
             .current_dir(dir.path())
             .args(["approve", &id])
@@ -408,7 +408,7 @@ mod status_commands {
 
         docket_cmd()
             .current_dir(dir.path())
-            .args(["start", &id])
+            .args(["update", &id, "--status", "in-progress"])
             .assert()
             .success();
 
@@ -442,7 +442,7 @@ mod status_commands {
 
         docket_cmd()
             .current_dir(dir.path())
-            .args(["start", &id])
+            .args(["update", &id, "--status", "in-progress"])
             .assert()
             .success();
 

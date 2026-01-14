@@ -27,7 +27,7 @@ src/
     ├── cleanup.rs
     └── status/
         ├── mod.rs
-        ├── transitions.rs  # approve, start
+        ├── transitions.rs  # approve
         ├── done.rs
         └── jj.rs          # Jujutsu helpers
 ```
@@ -69,7 +69,7 @@ Draft → Approved → InProgress → Done
 
 - `new` creates bugs in Draft
 - `approve` transitions Draft → Approved
-- `start` or `work` transitions Approved → InProgress
+- `work` transitions Approved → InProgress
 - `done` transitions any → Done
 
 ## Code Conventions
