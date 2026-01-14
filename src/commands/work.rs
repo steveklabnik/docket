@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
-use std::os::unix::process::CommandExt;
 use std::process::Command;
 
 use crate::bug::Status;
@@ -133,14 +132,36 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
     println!("{} Launching Claude Code...", "→".blue());
     println!();
 
-    // Exec claude with environment variable and optional flags
-    // Explicitly set current_dir to ensure claude runs in workspace
-    let err = Command::new("claude")
+    // Spawn claude and wait for it to finish (instead of exec) so we can
+    // set a descriptive commit message afterward
+    let bug_title = bug.title().to_string();
+    let status = Command::new("claude")
         .current_dir(&workspace_path)
         .args(&claude_args)
         .env("DOCKET_BUG", &bug_id)
-        .exec();
+        .status()
+        .context("failed to launch claude")?;
 
-    // If we get here, exec failed
-    Err(anyhow!("failed to exec claude: {}", err))
+    // After Claude exits, set a descriptive commit message so the workspace
+    // is identifiable from trunk in `jj log` output
+    println!();
+    println!("{} Claude exited, updating commit message...", "→".blue());
+
+    let wip_message = format!("wip: {} - {}", bug_id, bug_title);
+    let describe_result = Command::new("jj")
+        .args(["describe", "-m", &wip_message])
+        .output()
+        .context("failed to run jj describe")?;
+
+    if !describe_result.status.success() {
+        eprintln!("{} Warning: failed to set commit message", "!".yellow());
+    } else {
+        println!("{} Set commit message: {}", "✓".green(), wip_message);
+    }
+
+    if !status.success() {
+        return Err(anyhow!("claude exited with non-zero status"));
+    }
+
+    Ok(())
 }
