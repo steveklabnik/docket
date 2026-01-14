@@ -39,26 +39,6 @@ pub fn find_workspace_dir(bug_id: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-/// Trigger jj to snapshot any uncommitted changes.
-/// jj auto-snapshots on most commands, so we run `jj log -n0` (no output, just snapshot).
-pub fn snapshot() -> Result<()> {
-    let output = std::process::Command::new("jj")
-        .args(["log", "-n0"])
-        .output();
-
-    match output {
-        Ok(output) if output.status.success() => {
-            println!("{} Snapshotted working copy changes", "→".blue());
-            Ok(())
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(anyhow!("jj log failed: {}", stderr.trim()))
-        }
-        Err(e) => Err(anyhow!("failed to run jj log: {}", e)),
-    }
-}
-
 /// Set the commit description using jj describe.
 pub fn describe(message: &str) -> Result<()> {
     let output = std::process::Command::new("jj")

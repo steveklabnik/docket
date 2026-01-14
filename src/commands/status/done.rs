@@ -46,8 +46,13 @@ pub fn done(id: &str) -> Result<()> {
         }
     }
 
-    // Re-open store after potential directory switch so events are written to the right location
+    // Re-open store after potential directory switch so events are written to the
+    // workspace's .docket (which will be part of the jj commit history when merged)
     let store = Store::open()?;
+
+    // Emit StatusChanged event BEFORE snapshot so it's captured in the jj commit
+    let status_event = Event::status_changed(bug_id.clone(), old_status.clone(), Status::Done);
+    store.append_event(&status_event)?;
 
     if in_workspace {
         // Running from workspace - do the full workflow
@@ -57,17 +62,10 @@ pub fn done(id: &str) -> Result<()> {
             bug_id.cyan()
         );
 
-        // 1. Snapshot any uncommitted changes
-        jj::snapshot()?;
-
-        // 2. Generate and set commit message
+        // Set commit message (jj describe auto-snapshots, capturing the StatusChanged event)
         let commit_message = format!("Implement {} ({})", bug_title, bug_id);
         jj::describe(&commit_message)?;
     }
-
-    // Emit StatusChanged event (while still in workspace if we switched)
-    let status_event = Event::status_changed(bug_id.clone(), old_status.clone(), Status::Done);
-    store.append_event(&status_event)?;
 
     println!(
         "{} Completed bug {} ({} -> {})",
