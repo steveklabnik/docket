@@ -1,14 +1,20 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use std::cmp::Ordering;
 
-use crate::bug::{Priority, Status};
+use crate::bug::{Bug, Priority, SortBy, Status};
 use crate::store::Store;
 
 pub fn list(
     status_filter: Option<&str>,
     priority_filter: Option<&str>,
     show_all: bool,
+    sort_by: &str,
+    reverse: bool,
 ) -> Result<()> {
+    // Parse sort field early to catch invalid input
+    let sort_by: SortBy = sort_by.parse().context("invalid sort field")?;
+
     let store = Store::open()?;
     let bugs = store.list_bugs()?;
 
@@ -22,8 +28,8 @@ pub fn list(
     let priority_filter: Option<Priority> = priority_filter.and_then(|p| p.parse().ok());
 
     // Filter bugs
-    let filtered: Vec<_> = bugs
-        .iter()
+    let mut filtered: Vec<_> = bugs
+        .into_iter()
         .filter(|bug| {
             // By default, hide terminal states (done, not-planned) unless --all is specified
             if !show_all && matches!(bug.status(), Status::Done | Status::NotPlanned) {
@@ -48,6 +54,16 @@ pub fn list(
         })
         .collect();
 
+    // Sort bugs
+    filtered.sort_by(|a, b| {
+        let ordering = compare_bugs(a, b, sort_by);
+        if reverse {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+
     if filtered.is_empty() {
         println!("{}", "No bugs match the filters.".dimmed());
         return Ok(());
@@ -64,7 +80,7 @@ pub fn list(
     println!("{}", "-".repeat(60).dimmed());
 
     // Print bugs
-    for bug in filtered {
+    for bug in &filtered {
         let status_str = format!("{}", bug.status());
         let status_colored = match bug.status() {
             Status::Draft => status_str.dimmed(),
@@ -91,4 +107,21 @@ pub fn list(
     }
 
     Ok(())
+}
+
+/// Compare two bugs for sorting.
+/// Secondary sort is always by created date (oldest first) within the same primary field.
+fn compare_bugs(a: &Bug, b: &Bug, sort_by: SortBy) -> Ordering {
+    let primary = match sort_by {
+        SortBy::Priority => a.priority().cmp(b.priority()),
+        SortBy::Created => a.created().cmp(&b.created()),
+        SortBy::Status => a.status().cmp(b.status()),
+    };
+
+    // Secondary sort: oldest first (FIFO within same primary)
+    if primary == Ordering::Equal {
+        a.created().cmp(&b.created())
+    } else {
+        primary
+    }
 }

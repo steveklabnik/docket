@@ -239,6 +239,186 @@ mod list_command {
             .stdout(predicate::str::contains("High priority"))
             .stdout(predicate::str::contains("Low priority").not());
     }
+
+    #[test]
+    fn list_sorts_by_priority_by_default() {
+        let dir = setup_docket_repo();
+
+        // Create bugs in order: low, medium, high
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Low bug", "--priority", "low"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Medium bug", "--priority", "medium"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "High bug", "--priority", "high"])
+            .assert()
+            .success();
+
+        // Default sort should show high first
+        let output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let high_pos = stdout.find("High bug").unwrap();
+        let medium_pos = stdout.find("Medium bug").unwrap();
+        let low_pos = stdout.find("Low bug").unwrap();
+
+        assert!(
+            high_pos < medium_pos,
+            "High priority should come before medium"
+        );
+        assert!(
+            medium_pos < low_pos,
+            "Medium priority should come before low"
+        );
+    }
+
+    #[test]
+    fn list_sort_by_created() {
+        let dir = setup_docket_repo();
+
+        // Create bugs
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "First created", "--priority", "low"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Second created", "--priority", "high"])
+            .assert()
+            .success();
+
+        // Sort by created should show oldest first
+        let output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--sort", "created"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let first_pos = stdout.find("First created").unwrap();
+        let second_pos = stdout.find("Second created").unwrap();
+
+        assert!(
+            first_pos < second_pos,
+            "First created should come before second"
+        );
+    }
+
+    #[test]
+    fn list_sort_by_status() {
+        let dir = setup_docket_repo();
+
+        // Create bugs with different statuses
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Draft bug"])
+            .assert()
+            .success();
+
+        // Get the ID of the draft bug
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let output_str = String::from_utf8_lossy(&list_output.stdout);
+        let id = output_str
+            .lines()
+            .find(|l| l.contains("Draft bug"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap()
+            .to_string();
+
+        // Approve it
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["approve", &id])
+            .assert()
+            .success();
+
+        // Create another draft bug
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Another draft"])
+            .assert()
+            .success();
+
+        // Sort by status should show approved before draft
+        let output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--sort", "status"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let approved_pos = stdout.find("Draft bug").unwrap(); // This one is now approved
+        let draft_pos = stdout.find("Another draft").unwrap();
+
+        assert!(
+            approved_pos < draft_pos,
+            "Approved should come before draft"
+        );
+    }
+
+    #[test]
+    fn list_reverse_sort() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "High bug", "--priority", "high"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Low bug", "--priority", "low"])
+            .assert()
+            .success();
+
+        // Reverse sort should show low first
+        let output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--reverse"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let high_pos = stdout.find("High bug").unwrap();
+        let low_pos = stdout.find("Low bug").unwrap();
+
+        assert!(
+            low_pos < high_pos,
+            "Low priority should come before high with --reverse"
+        );
+    }
+
+    #[test]
+    fn list_invalid_sort_field() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--sort", "invalid"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("unknown sort field"));
+    }
 }
 
 mod show_command {

@@ -45,6 +45,14 @@ enum Commands {
         /// Show all bugs including done
         #[arg(short, long)]
         all: bool,
+
+        /// Sort by field (priority, created, status)
+        #[arg(long, default_value = "priority")]
+        sort: String,
+
+        /// Reverse the sort order
+        #[arg(short, long)]
+        reverse: bool,
     },
 
     /// Show details of a bug
@@ -135,7 +143,9 @@ fn main() -> Result<()> {
             status,
             priority,
             all,
-        } => commands::list(status.as_deref(), priority.as_deref(), all),
+            sort,
+            reverse,
+        } => commands::list(status.as_deref(), priority.as_deref(), all, &sort, reverse),
         Commands::Show { id } => commands::show(&id),
         Commands::Update {
             id,

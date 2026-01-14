@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 // Note: Utc is used in BugMetadata for created timestamp
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Status {
     Draft,
@@ -14,6 +14,30 @@ pub enum Status {
     InProgress,
     Done,
     NotPlanned,
+}
+
+impl Status {
+    fn sort_order(&self) -> u8 {
+        match self {
+            Status::InProgress => 0, // Active work first
+            Status::Approved => 1,   // Ready to work
+            Status::Draft => 2,      // Needs approval
+            Status::Done => 3,       // Completed
+            Status::NotPlanned => 4, // Won't do
+        }
+    }
+}
+
+impl Ord for Status {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.sort_order().cmp(&other.sort_order())
+    }
+}
+
+impl PartialOrd for Status {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl fmt::Display for Status {
@@ -43,13 +67,35 @@ impl FromStr for Status {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
     Low,
     #[default]
     Medium,
     High,
+}
+
+impl Priority {
+    fn sort_order(&self) -> u8 {
+        match self {
+            Priority::High => 0, // High priority first
+            Priority::Medium => 1,
+            Priority::Low => 2,
+        }
+    }
+}
+
+impl Ord for Priority {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.sort_order().cmp(&other.sort_order())
+    }
+}
+
+impl PartialOrd for Priority {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl fmt::Display for Priority {
@@ -71,6 +117,41 @@ impl FromStr for Priority {
             "medium" | "med" => Ok(Priority::Medium),
             "high" => Ok(Priority::High),
             _ => Err(anyhow!("unknown priority: {}", s)),
+        }
+    }
+}
+
+/// Sort field for listing bugs
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SortBy {
+    #[default]
+    Priority,
+    Created,
+    Status,
+}
+
+impl fmt::Display for SortBy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SortBy::Priority => write!(f, "priority"),
+            SortBy::Created => write!(f, "created"),
+            SortBy::Status => write!(f, "status"),
+        }
+    }
+}
+
+impl FromStr for SortBy {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "priority" | "p" => Ok(SortBy::Priority),
+            "created" | "c" | "date" => Ok(SortBy::Created),
+            "status" | "s" => Ok(SortBy::Status),
+            _ => Err(anyhow!(
+                "unknown sort field: {}. Valid options: priority, created, status",
+                s
+            )),
         }
     }
 }
@@ -123,6 +204,10 @@ impl Bug {
 
     pub fn priority(&self) -> &Priority {
         &self.metadata.priority
+    }
+
+    pub fn created(&self) -> DateTime<Utc> {
+        self.metadata.created
     }
 }
 
@@ -294,5 +379,94 @@ Body"#;
         assert_eq!(bug.title(), "Accessor Test");
         assert!(matches!(bug.status(), Status::Approved));
         assert_eq!(bug.priority(), &Priority::Low);
+    }
+
+    // Priority ordering tests
+    #[test]
+    fn priority_ord_high_first() {
+        assert!(Priority::High < Priority::Medium);
+        assert!(Priority::Medium < Priority::Low);
+        assert!(Priority::High < Priority::Low);
+    }
+
+    #[test]
+    fn priority_sort_order() {
+        let mut priorities = vec![Priority::Low, Priority::High, Priority::Medium];
+        priorities.sort();
+        assert_eq!(
+            priorities,
+            vec![Priority::High, Priority::Medium, Priority::Low]
+        );
+    }
+
+    // Status ordering tests
+    #[test]
+    fn status_ord_workflow_order() {
+        // InProgress (active) should come first
+        assert!(Status::InProgress < Status::Approved);
+        assert!(Status::Approved < Status::Draft);
+        assert!(Status::Draft < Status::Done);
+        assert!(Status::Done < Status::NotPlanned);
+    }
+
+    #[test]
+    fn status_sort_order() {
+        let mut statuses = vec![
+            Status::Done,
+            Status::Draft,
+            Status::InProgress,
+            Status::NotPlanned,
+            Status::Approved,
+        ];
+        statuses.sort();
+        assert_eq!(
+            statuses,
+            vec![
+                Status::InProgress,
+                Status::Approved,
+                Status::Draft,
+                Status::Done,
+                Status::NotPlanned,
+            ]
+        );
+    }
+
+    // SortBy tests
+    #[test]
+    fn sort_by_from_str_priority() {
+        assert_eq!(SortBy::from_str("priority").unwrap(), SortBy::Priority);
+        assert_eq!(SortBy::from_str("PRIORITY").unwrap(), SortBy::Priority);
+        assert_eq!(SortBy::from_str("p").unwrap(), SortBy::Priority);
+    }
+
+    #[test]
+    fn sort_by_from_str_created() {
+        assert_eq!(SortBy::from_str("created").unwrap(), SortBy::Created);
+        assert_eq!(SortBy::from_str("c").unwrap(), SortBy::Created);
+        assert_eq!(SortBy::from_str("date").unwrap(), SortBy::Created);
+    }
+
+    #[test]
+    fn sort_by_from_str_status() {
+        assert_eq!(SortBy::from_str("status").unwrap(), SortBy::Status);
+        assert_eq!(SortBy::from_str("s").unwrap(), SortBy::Status);
+    }
+
+    #[test]
+    fn sort_by_from_str_unknown_fails() {
+        assert!(SortBy::from_str("invalid").is_err());
+        assert!(SortBy::from_str("").is_err());
+    }
+
+    #[test]
+    fn sort_by_display() {
+        assert_eq!(SortBy::Priority.to_string(), "priority");
+        assert_eq!(SortBy::Created.to_string(), "created");
+        assert_eq!(SortBy::Status.to_string(), "status");
+    }
+
+    #[test]
+    fn sort_by_default_is_priority() {
+        assert_eq!(SortBy::default(), SortBy::Priority);
     }
 }
