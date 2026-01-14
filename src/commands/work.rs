@@ -51,7 +51,11 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
     // Check if jj is available
     let jj_check = Command::new("jj").arg("--version").output();
     if jj_check.is_err() {
-        return Err(anyhow!("jj is not installed or not in PATH"));
+        return Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/\n\
+             Then run 'jj git init' to initialize a jj repository."
+        ));
     }
 
     // Get repo root
@@ -61,7 +65,11 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         .context("failed to get jj workspace root")?;
 
     if !repo_root.status.success() {
-        return Err(anyhow!("not in a jj repository"));
+        return Err(anyhow!(
+            "not in a jj repository.\n\
+             Run 'jj git init' to initialize jj in an existing git repository,\n\
+             or 'jj git clone <url>' to clone a repository with jj."
+        ));
     }
 
     let repo_root = String::from_utf8_lossy(&repo_root.stdout)
@@ -86,7 +94,11 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
             .context("failed to create jj workspace")?;
 
         if !status.success() {
-            return Err(anyhow!("failed to create workspace"));
+            return Err(anyhow!(
+                "failed to create jj workspace at '{}'.\n\
+                 Check that the directory doesn't already exist and you have write permissions.",
+                workspace_path
+            ));
         }
     } else {
         println!(

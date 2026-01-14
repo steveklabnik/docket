@@ -18,7 +18,9 @@ fn set_status(id: &str, new_status: Status, action: &str) -> Result<()> {
     // Validate transition
     if matches!(old_status, Status::Done) {
         return Err(anyhow!(
-            "cannot change status of completed bug '{}'",
+            "bug '{}' is already marked as done.\n\
+             Use 'docket show {}' to view the bug details.",
+            bug_id,
             bug_id
         ));
     }

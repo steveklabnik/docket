@@ -54,6 +54,10 @@ pub fn describe(message: &str) -> Result<()> {
             let stderr = String::from_utf8_lossy(&output.stderr);
             Err(anyhow!("jj describe failed: {}", stderr.trim()))
         }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
         Err(e) => Err(anyhow!("failed to run jj describe: {}", e)),
     }
 }

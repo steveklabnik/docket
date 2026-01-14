@@ -138,7 +138,10 @@ fn get_repo_root() -> Result<String> {
     // Check if jj is available
     let jj_check = Command::new("jj").arg("--version").output();
     if jj_check.is_err() {
-        return Err(anyhow!("jj is not installed or not in PATH"));
+        return Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        ));
     }
 
     let repo_root = Command::new("jj")
@@ -147,7 +150,11 @@ fn get_repo_root() -> Result<String> {
         .context("failed to get jj workspace root")?;
 
     if !repo_root.status.success() {
-        return Err(anyhow!("not in a jj repository"));
+        return Err(anyhow!(
+            "not in a jj repository.\n\
+             Run 'jj git init' to initialize jj in an existing git repository,\n\
+             or 'jj git clone <url>' to clone a repository with jj."
+        ));
     }
 
     Ok(String::from_utf8_lossy(&repo_root.stdout)

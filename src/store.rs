@@ -34,7 +34,8 @@ impl Store {
 
             if !current.pop() {
                 return Err(anyhow!(
-                    "not a docket repository (or any parent): .docket directory not found"
+                    "not a docket repository (or any parent): .docket directory not found.\n\
+                     Run 'docket init' to initialize a new docket repository."
                 ));
             }
         }
@@ -125,7 +126,11 @@ impl Store {
         let matches: Vec<_> = glob::glob(pattern_str)?.collect::<Result<Vec<_>, _>>()?;
 
         match matches.len() {
-            0 => Err(anyhow!("bug not found: {}", id)),
+            0 => Err(anyhow!(
+                "bug not found: '{}'\n\
+                 Run 'docket list' to see all bugs, or 'docket new' to create one.",
+                id
+            )),
             1 => {
                 let events = event::read_events(&matches[0])?;
                 event::derive_bug(&events)
@@ -155,7 +160,11 @@ impl Store {
     pub fn get_events(&self, id: &str) -> Result<Vec<Event>> {
         let path = self.bug_path(id);
         if !path.exists() {
-            return Err(anyhow!("bug not found: {}", id));
+            return Err(anyhow!(
+                "bug not found: '{}'\n\
+                 Run 'docket list' to see all bugs.",
+                id
+            ));
         }
         event::read_events(&path)
     }
@@ -177,7 +186,11 @@ impl Store {
         let matches: Vec<_> = glob::glob(pattern_str)?.collect::<Result<Vec<_>, _>>()?;
 
         match matches.len() {
-            0 => Err(anyhow!("bug not found: {}", id)),
+            0 => Err(anyhow!(
+                "bug not found: '{}'\n\
+                 Run 'docket list' to see all bugs.",
+                id
+            )),
             1 => {
                 let full_id = matches[0]
                     .file_stem()
