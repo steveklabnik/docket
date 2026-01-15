@@ -74,6 +74,17 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
                 bug.id().cyan()
             );
         }
+        Status::Blocked => {
+            eprintln!(
+                "{} Bug {} is blocked. Use 'docket unblock {}' to unblock it first.",
+                "!".yellow(),
+                bug.id().cyan(),
+                bug.id()
+            );
+            if let Some(reason) = bug.blocked_reason() {
+                eprintln!("  {} {}", "Reason:".dimmed(), reason);
+            }
+        }
         Status::Review => {
             eprintln!(
                 "{} Bug {} is in review. Use 'docket reject {}' to return to in-progress first.",

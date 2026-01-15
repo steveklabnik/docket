@@ -50,6 +50,7 @@ fn main() -> Result<()> {
             priority,
             all,
             review,
+            blocked,
             sort,
             reverse,
             interactive,
@@ -58,9 +59,11 @@ fn main() -> Result<()> {
             changelog,
             tag,
         } => {
-            // --review flag is shorthand for --status review
+            // --review and --blocked flags are shorthand for --status
             let status_filter = if review {
                 Some("review".to_string())
+            } else if blocked {
+                Some("blocked".to_string())
             } else {
                 status
             };
@@ -106,6 +109,14 @@ fn main() -> Result<()> {
         Commands::Tag { id, tag } => commands::tag(&id, &tag),
         Commands::Untag { id, tag } => commands::untag(&id, &tag),
         Commands::Approve { id } => commands::approve(&id),
+        Commands::Block { id, reason } => {
+            let id = resolve_bug_id(id)?;
+            commands::block(&id, reason)
+        }
+        Commands::Unblock { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::unblock(&id)
+        }
         Commands::Review { id } => {
             let id = resolve_bug_id(id)?;
             commands::review(&id)

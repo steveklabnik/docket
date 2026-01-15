@@ -137,6 +137,31 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    Tag: {}", tag);
             }
+            EventData::Blocked { from, reason } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "blocked".red().bold(),
+                    actor.dimmed()
+                );
+                println!(
+                    "    {} -> {}",
+                    format!("{}", from).dimmed(),
+                    "blocked".red().bold()
+                );
+                if let Some(r) = reason {
+                    println!("    Reason: {}", r);
+                }
+            }
+            EventData::Unblocked => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "unblocked".green(),
+                    actor.dimmed()
+                );
+                println!("    {} -> {}", "blocked".red(), "in-progress".yellow());
+            }
         }
         println!();
     }

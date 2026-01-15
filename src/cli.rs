@@ -89,6 +89,10 @@ pub enum Commands {
         #[arg(long)]
         review: bool,
 
+        /// Show only blocked bugs (shorthand for --status blocked)
+        #[arg(long)]
+        blocked: bool,
+
         /// Sort by field (priority, created, status)
         #[arg(long, default_value = "priority")]
         sort: String,
@@ -185,6 +189,24 @@ pub enum Commands {
         /// Bug ID (prefix match supported)
         #[arg(add = ArgValueCompleter::new(complete_bug_id))]
         id: String,
+    },
+
+    /// Mark a bug as blocked on external dependency
+    Block {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: Option<String>,
+
+        /// Reason for blocking (e.g., "waiting on API access")
+        #[arg(short, long)]
+        reason: Option<String>,
+    },
+
+    /// Unblock a blocked bug (back to in-progress)
+    Unblock {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: Option<String>,
     },
 
     /// Submit a bug for code review (uses current workspace bug if no ID provided)

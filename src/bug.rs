@@ -13,6 +13,7 @@ pub enum Status {
     Draft,
     Approved,
     InProgress,
+    Blocked,
     Review,
     Done,
     NotPlanned,
@@ -22,11 +23,12 @@ impl Status {
     fn sort_order(&self) -> u8 {
         match self {
             Status::Review => 0,     // Awaiting review
-            Status::InProgress => 1, // Active work
-            Status::Approved => 2,   // Ready to work
-            Status::Draft => 3,      // Needs approval
-            Status::Done => 4,       // Completed
-            Status::NotPlanned => 5, // Won't do
+            Status::Blocked => 1,    // Blocked on external dependency
+            Status::InProgress => 2, // Active work
+            Status::Approved => 3,   // Ready to work
+            Status::Draft => 4,      // Needs approval
+            Status::Done => 5,       // Completed
+            Status::NotPlanned => 6, // Won't do
         }
     }
 }
@@ -49,6 +51,7 @@ impl fmt::Display for Status {
             Status::Draft => write!(f, "draft"),
             Status::Approved => write!(f, "approved"),
             Status::InProgress => write!(f, "in-progress"),
+            Status::Blocked => write!(f, "blocked"),
             Status::Review => write!(f, "review"),
             Status::Done => write!(f, "done"),
             Status::NotPlanned => write!(f, "not-planned"),
@@ -64,6 +67,7 @@ impl FromStr for Status {
             "draft" => Ok(Status::Draft),
             "approved" => Ok(Status::Approved),
             "in-progress" | "in_progress" | "inprogress" => Ok(Status::InProgress),
+            "blocked" => Ok(Status::Blocked),
             "review" => Ok(Status::Review),
             "done" => Ok(Status::Done),
             "not-planned" | "not_planned" | "notplanned" => Ok(Status::NotPlanned),
@@ -262,6 +266,9 @@ pub struct BugMetadata {
     /// If set, this bug is a child step of the specified epic
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_epic: Option<String>,
+    /// If blocked, the reason why (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -342,6 +349,11 @@ impl Bug {
     /// Returns true if this is a child of an epic
     pub fn is_child(&self) -> bool {
         self.metadata.parent_epic.is_some()
+    }
+
+    /// Returns the blocked reason if set
+    pub fn blocked_reason(&self) -> Option<&str> {
+        self.metadata.blocked_reason.as_deref()
     }
 }
 
@@ -432,9 +444,22 @@ mod tests {
         assert_eq!(Status::Draft.to_string(), "draft");
         assert_eq!(Status::Approved.to_string(), "approved");
         assert_eq!(Status::InProgress.to_string(), "in-progress");
+        assert_eq!(Status::Blocked.to_string(), "blocked");
         assert_eq!(Status::Review.to_string(), "review");
         assert_eq!(Status::Done.to_string(), "done");
         assert_eq!(Status::NotPlanned.to_string(), "not-planned");
+    }
+
+    #[test]
+    fn status_from_str_blocked() {
+        assert!(matches!(
+            Status::from_str("blocked").unwrap(),
+            Status::Blocked
+        ));
+        assert!(matches!(
+            Status::from_str("BLOCKED").unwrap(),
+            Status::Blocked
+        ));
     }
 
     #[test]
@@ -550,7 +575,8 @@ Body"#;
     #[test]
     fn status_ord_workflow_order() {
         // Review (awaiting review) should come first
-        assert!(Status::Review < Status::InProgress);
+        assert!(Status::Review < Status::Blocked);
+        assert!(Status::Blocked < Status::InProgress);
         assert!(Status::InProgress < Status::Approved);
         assert!(Status::Approved < Status::Draft);
         assert!(Status::Draft < Status::Done);
@@ -566,12 +592,14 @@ Body"#;
             Status::NotPlanned,
             Status::Approved,
             Status::Review,
+            Status::Blocked,
         ];
         statuses.sort();
         assert_eq!(
             statuses,
             vec![
                 Status::Review,
+                Status::Blocked,
                 Status::InProgress,
                 Status::Approved,
                 Status::Draft,

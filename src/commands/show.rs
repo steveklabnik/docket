@@ -18,12 +18,19 @@ pub fn show(id: &str) -> Result<()> {
         Status::Draft => status_str.dimmed(),
         Status::Approved => status_str.green(),
         Status::InProgress => status_str.yellow(),
+        Status::Blocked => status_str.red().bold(),
         Status::Review => status_str.magenta(),
         Status::Done => status_str.blue(),
         Status::NotPlanned => status_str.red(),
     };
 
     println!("{:12} {}", "Status:".dimmed(), status_colored);
+
+    // Show blocked reason if blocked
+    if let Some(reason) = bug.blocked_reason() {
+        println!("{:12} {}", "Blocked:".dimmed(), reason.red());
+    }
+
     println!("{:12} {}", "Priority:".dimmed(), bug.priority());
     println!(
         "{:12} {}",

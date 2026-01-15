@@ -5,14 +5,20 @@
 //! - `review` - Submit a bug for code review
 //! - `reject` - Reject a bug from review back to in progress
 //! - `done` - Mark a bug as complete (with optional jj integration)
+//! - `block` - Mark a bug as blocked on external dependency
+//! - `unblock` - Mark a blocked bug as back in progress
 
+mod block;
 mod done;
 mod jj;
 mod reject;
 mod review;
 mod transitions;
+mod unblock;
 
+pub use block::block;
 pub use done::done;
 pub use reject::reject;
 pub use review::review;
 pub use transitions::approve;
+pub use unblock::unblock;

@@ -162,9 +162,14 @@ fn find_workspaces_to_sync(
 
         // Check if bug exists and is in syncable state
         // Include Draft bugs since they may have active PRs
+        // Include Blocked bugs since they still have active workspaces
         match store.get_bug(bug_id) {
             Ok(bug) => match bug.status() {
-                Status::InProgress | Status::Approved | Status::Draft | Status::Review => {
+                Status::InProgress
+                | Status::Approved
+                | Status::Draft
+                | Status::Review
+                | Status::Blocked => {
                     workspaces.push(WorkspaceInfo {
                         name: name.clone(),
                         path: entry.path(),

@@ -30,7 +30,7 @@ pub use log::log;
 pub use new::new;
 pub use ready::ready;
 pub use show::show;
-pub use status::{approve, done, reject, review};
+pub use status::{approve, block, done, reject, review, unblock};
 pub use sync::sync;
 pub use tag::tag;
 pub use untag::untag;

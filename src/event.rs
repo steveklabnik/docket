@@ -27,6 +27,14 @@ pub enum EventData {
         from: Status,
         to: Status,
     },
+    /// Bug blocked on external dependency
+    Blocked {
+        from: Status,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// Bug unblocked and back to in progress
+    Unblocked,
     Updated {
         title: Option<String>,
         body: Option<String>,
@@ -161,6 +169,14 @@ impl Event {
     pub fn tag_removed(bug_id: String, tag: String) -> Self {
         Self::new(bug_id, EventData::TagRemoved { tag })
     }
+
+    pub fn blocked(bug_id: String, from: Status, reason: Option<String>) -> Self {
+        Self::new(bug_id, EventData::Blocked { from, reason })
+    }
+
+    pub fn unblocked(bug_id: String) -> Self {
+        Self::new(bug_id, EventData::Unblocked)
+    }
 }
 
 /// Append an event to a bug's JSONL file
@@ -245,6 +261,7 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             tags: HashSet::new(),
             is_epic: initial_is_epic,
             parent_epic: initial_parent_epic,
+            blocked_reason: None,
         },
         body: initial_body,
     };
@@ -288,6 +305,14 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             }
             EventData::TagRemoved { tag } => {
                 bug.metadata.tags.remove(tag);
+            }
+            EventData::Blocked { reason, .. } => {
+                bug.metadata.status = Status::Blocked;
+                bug.metadata.blocked_reason = reason.clone();
+            }
+            EventData::Unblocked => {
+                bug.metadata.status = Status::InProgress;
+                bug.metadata.blocked_reason = None;
             }
         }
     }
