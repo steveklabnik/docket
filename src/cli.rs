@@ -120,6 +120,14 @@ pub enum Commands {
         /// Filter by tag
         #[arg(long)]
         tag: Option<String>,
+
+        /// Show only bugs that block other bugs
+        #[arg(long)]
+        blocking: bool,
+
+        /// Show only bugs blocked by a specific bug ID
+        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_bug_id))]
+        depends_on: Option<String>,
     },
 
     /// Show details of a bug (uses current workspace bug if no ID provided)
@@ -191,22 +199,30 @@ pub enum Commands {
         id: String,
     },
 
-    /// Mark a bug as blocked on external dependency
+    /// Mark a bug as blocked (on external dependency or another bug)
     Block {
         /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
         #[arg(add = ArgValueCompleter::new(complete_bug_id))]
         id: Option<String>,
 
-        /// Reason for blocking (e.g., "waiting on API access")
+        /// Reason for blocking (e.g., "waiting on API access") - for external blocks
         #[arg(short, long)]
         reason: Option<String>,
+
+        /// Bug ID that blocks this bug (inter-bug dependency)
+        #[arg(long, add = ArgValueCompleter::new(complete_bug_id))]
+        by: Option<String>,
     },
 
-    /// Unblock a blocked bug (back to in-progress)
+    /// Unblock a bug (from external dependency or another bug)
     Unblock {
         /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
         #[arg(add = ArgValueCompleter::new(complete_bug_id))]
         id: Option<String>,
+
+        /// Bug ID to remove as a blocker (inter-bug dependency)
+        #[arg(long, add = ArgValueCompleter::new(complete_bug_id))]
+        by: Option<String>,
     },
 
     /// Submit a bug for code review (uses current workspace bug if no ID provided)

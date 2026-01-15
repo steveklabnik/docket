@@ -269,6 +269,9 @@ pub struct BugMetadata {
     /// If blocked, the reason why (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
+    /// Bug IDs that this bug is blocked by (inter-bug dependencies)
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub blocked_by: HashSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -354,6 +357,21 @@ impl Bug {
     /// Returns the blocked reason if set
     pub fn blocked_reason(&self) -> Option<&str> {
         self.metadata.blocked_reason.as_deref()
+    }
+
+    /// Returns the set of bug IDs that this bug is blocked by
+    pub fn blocked_by(&self) -> &HashSet<String> {
+        &self.metadata.blocked_by
+    }
+
+    /// Returns true if this bug is blocked by another bug
+    pub fn is_blocked_by(&self, id: &str) -> bool {
+        self.metadata.blocked_by.contains(id)
+    }
+
+    /// Returns true if this bug has any dependencies
+    pub fn has_dependencies(&self) -> bool {
+        !self.metadata.blocked_by.is_empty()
     }
 }
 

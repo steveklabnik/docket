@@ -1,12 +1,13 @@
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::bug::{Bug, Status};
 use crate::store::Store;
 
 pub fn show(id: &str) -> Result<()> {
     let store = Store::open()?;
     let bug = store.get_bug(id)?;
+    let all_bugs = store.list_bugs()?;
 
     // Print header
     println!("{} {}", bug.id().cyan().bold(), bug.title().bold());
@@ -62,10 +63,70 @@ pub fn show(id: &str) -> Result<()> {
         );
     }
 
+    // Show dependencies (blocked by)
+    if bug.has_dependencies() {
+        let blocked_by = format_blocked_by(&bug, &all_bugs);
+        println!("{:12} {}", "Blocked by:".dimmed(), blocked_by);
+    }
+
+    // Show reverse dependencies (blocks)
+    let blocks = find_bugs_blocked_by(bug.id(), &all_bugs);
+    if !blocks.is_empty() {
+        let blocks_str = blocks
+            .iter()
+            .map(|b| {
+                let status_indicator = if matches!(b.status(), Status::Done) {
+                    "✓".green().to_string()
+                } else {
+                    "○".dimmed().to_string()
+                };
+                format!("{} {} ({})", status_indicator, b.id().cyan(), b.title())
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!("{:12} {}", "Blocks:".dimmed(), blocks_str);
+    }
+
     println!();
 
     // Print body
     println!("{}", bug.body);
 
     Ok(())
+}
+
+/// Format blocked-by dependencies with status indicators
+fn format_blocked_by(bug: &Bug, all_bugs: &[Bug]) -> String {
+    let mut deps: Vec<_> = bug.blocked_by().iter().collect();
+    deps.sort();
+
+    deps.iter()
+        .map(|blocker_id| {
+            // Find the blocker bug to check its status
+            if let Some(blocker) = all_bugs.iter().find(|b| b.id() == *blocker_id) {
+                let status_indicator = if matches!(blocker.status(), Status::Done) {
+                    "✓".green().to_string()
+                } else {
+                    "○".yellow().to_string()
+                };
+                format!(
+                    "{} {} ({})",
+                    status_indicator,
+                    blocker_id.cyan(),
+                    blocker.title()
+                )
+            } else {
+                format!("{} (not found)", blocker_id.cyan())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Find all bugs that are blocked by the given bug ID
+fn find_bugs_blocked_by<'a>(blocker_id: &str, all_bugs: &'a [Bug]) -> Vec<&'a Bug> {
+    all_bugs
+        .iter()
+        .filter(|bug| bug.is_blocked_by(blocker_id))
+        .collect()
 }

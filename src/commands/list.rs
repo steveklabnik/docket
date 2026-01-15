@@ -19,6 +19,8 @@ pub fn list(
     no_version: bool,
     changelog_filter: Option<&str>,
     tag_filter: Option<&str>,
+    blocking_filter: bool,
+    depends_on_filter: Option<&str>,
 ) -> Result<()> {
     // Parse sort field early to catch invalid input
     let sort_by: SortBy = sort_by.parse().context("invalid sort field")?;
@@ -30,6 +32,20 @@ pub fn list(
         println!("{}", "No bugs found.".dimmed());
         return Ok(());
     }
+
+    // Resolve depends_on filter ID if provided
+    let depends_on_full_id: Option<String> = depends_on_filter
+        .map(|id| store.resolve_id(id))
+        .transpose()?;
+
+    // Build a set of bug IDs that block other bugs (for --blocking filter)
+    let blocking_bug_ids: std::collections::HashSet<String> = if blocking_filter {
+        bugs.iter()
+            .flat_map(|bug| bug.blocked_by().iter().cloned())
+            .collect()
+    } else {
+        std::collections::HashSet::new()
+    };
 
     // Parse filters
     let status_filter: Option<Status> = status_filter.and_then(|s| s.parse().ok());
@@ -91,6 +107,18 @@ pub fn list(
             // Apply tag filter
             if let Some(tag) = tag_filter {
                 if !bug.has_tag(tag) {
+                    return false;
+                }
+            }
+
+            // Apply --blocking filter: show only bugs that block other bugs
+            if blocking_filter && !blocking_bug_ids.contains(bug.id()) {
+                return false;
+            }
+
+            // Apply --depends-on filter: show only bugs blocked by a specific bug
+            if let Some(ref blocker_id) = depends_on_full_id {
+                if !bug.is_blocked_by(blocker_id) {
                     return false;
                 }
             }

@@ -69,6 +69,16 @@ pub enum EventData {
     TagRemoved {
         tag: String,
     },
+    /// Mark a bug as blocked by another bug (inter-bug dependency)
+    DependencyAdded {
+        /// The bug ID that blocks this bug
+        blocked_by: String,
+    },
+    /// Remove a dependency on another bug
+    DependencyRemoved {
+        /// The bug ID that was blocking this bug
+        blocked_by: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +187,14 @@ impl Event {
     pub fn unblocked(bug_id: String) -> Self {
         Self::new(bug_id, EventData::Unblocked)
     }
+
+    pub fn dependency_added(bug_id: String, blocked_by: String) -> Self {
+        Self::new(bug_id, EventData::DependencyAdded { blocked_by })
+    }
+
+    pub fn dependency_removed(bug_id: String, blocked_by: String) -> Self {
+        Self::new(bug_id, EventData::DependencyRemoved { blocked_by })
+    }
 }
 
 /// Append an event to a bug's JSONL file
@@ -262,6 +280,7 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             is_epic: initial_is_epic,
             parent_epic: initial_parent_epic,
             blocked_reason: None,
+            blocked_by: HashSet::new(),
         },
         body: initial_body,
     };
@@ -313,6 +332,12 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             EventData::Unblocked => {
                 bug.metadata.status = Status::InProgress;
                 bug.metadata.blocked_reason = None;
+            }
+            EventData::DependencyAdded { blocked_by } => {
+                bug.metadata.blocked_by.insert(blocked_by.clone());
+            }
+            EventData::DependencyRemoved { blocked_by } => {
+                bug.metadata.blocked_by.remove(blocked_by);
             }
         }
     }

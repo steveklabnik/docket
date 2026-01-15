@@ -58,6 +58,8 @@ fn main() -> Result<()> {
             no_version,
             changelog,
             tag,
+            blocking,
+            depends_on,
         } => {
             // --review and --blocked flags are shorthand for --status
             let status_filter = if review {
@@ -78,6 +80,8 @@ fn main() -> Result<()> {
                 no_version,
                 changelog.as_deref(),
                 tag.as_deref(),
+                blocking,
+                depends_on.as_deref(),
             )
         }
         Commands::Show { id } => {
@@ -109,13 +113,13 @@ fn main() -> Result<()> {
         Commands::Tag { id, tag } => commands::tag(&id, &tag),
         Commands::Untag { id, tag } => commands::untag(&id, &tag),
         Commands::Approve { id } => commands::approve(&id),
-        Commands::Block { id, reason } => {
+        Commands::Block { id, reason, by } => {
             let id = resolve_bug_id(id)?;
-            commands::block(&id, reason)
+            commands::block(&id, reason, by)
         }
-        Commands::Unblock { id } => {
+        Commands::Unblock { id, by } => {
             let id = resolve_bug_id(id)?;
-            commands::unblock(&id)
+            commands::unblock(&id, by)
         }
         Commands::Review { id } => {
             let id = resolve_bug_id(id)?;

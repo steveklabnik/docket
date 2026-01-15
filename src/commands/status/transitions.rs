@@ -43,5 +43,43 @@ fn set_status(id: &str, new_status: Status, action: &str) -> Result<()> {
 
 /// Mark a bug as approved for work.
 pub fn approve(id: &str) -> Result<()> {
+    let store = Store::open()?;
+    let bug = store.get_bug(id)?;
+
+    // Check for unresolved dependencies and warn
+    if bug.has_dependencies() {
+        let all_bugs = store.list_bugs()?;
+        let unresolved: Vec<_> = bug
+            .blocked_by()
+            .iter()
+            .filter_map(|blocker_id| {
+                all_bugs
+                    .iter()
+                    .find(|b| b.id() == blocker_id)
+                    .filter(|b| !matches!(b.status(), Status::Done))
+            })
+            .collect();
+
+        if !unresolved.is_empty() {
+            eprintln!(
+                "{} Bug {} has {} unresolved dependenc{}:",
+                "!".yellow(),
+                bug.id().cyan(),
+                unresolved.len(),
+                if unresolved.len() == 1 { "y" } else { "ies" }
+            );
+            for blocker in &unresolved {
+                eprintln!(
+                    "  {} {} - {} ({})",
+                    "○".yellow(),
+                    blocker.id().cyan(),
+                    blocker.title(),
+                    blocker.status()
+                );
+            }
+            eprintln!();
+        }
+    }
+
     set_status(id, Status::Approved, "Approved")
 }

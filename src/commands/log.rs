@@ -162,6 +162,24 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    {} -> {}", "blocked".red(), "in-progress".yellow());
             }
+            EventData::DependencyAdded { blocked_by } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "dependency_added".magenta(),
+                    actor.dimmed()
+                );
+                println!("    Blocked by: {}", blocked_by.cyan());
+            }
+            EventData::DependencyRemoved { blocked_by } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "dependency_removed".green(),
+                    actor.dimmed()
+                );
+                println!("    Unblocked from: {}", blocked_by.cyan());
+            }
         }
         println!();
     }

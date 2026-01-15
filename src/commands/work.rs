@@ -64,6 +64,46 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         }
     }
 
+    // Warn about unresolved dependencies
+    if bug.has_dependencies() {
+        let all_bugs = store.list_bugs()?;
+        let unresolved: Vec<_> = bug
+            .blocked_by()
+            .iter()
+            .filter_map(|blocker_id| {
+                all_bugs
+                    .iter()
+                    .find(|b| b.id() == blocker_id)
+                    .filter(|b| !matches!(b.status(), Status::Done))
+            })
+            .collect();
+
+        if !unresolved.is_empty() {
+            eprintln!(
+                "{} Bug {} has {} unresolved dependenc{}:",
+                "!".yellow(),
+                bug.id().cyan(),
+                unresolved.len(),
+                if unresolved.len() == 1 { "y" } else { "ies" }
+            );
+            for blocker in &unresolved {
+                eprintln!(
+                    "  {} {} - {} ({})",
+                    "○".yellow(),
+                    blocker.id().cyan(),
+                    blocker.title(),
+                    blocker.status()
+                );
+            }
+            eprintln!(
+                "  {} Consider working on dependencies first, or use 'docket unblock {} --by ID' to remove them.",
+                "→".blue(),
+                bug.id()
+            );
+            eprintln!();
+        }
+    }
+
     // Warn if not approved
     match bug.status() {
         Status::Approved | Status::InProgress => {}
