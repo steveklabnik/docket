@@ -502,6 +502,112 @@ mod show_command {
             .failure()
             .stderr(predicate::str::contains("not found"));
     }
+
+    #[test]
+    fn show_supports_fuzzy_matching() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Fuzzy match test"])
+            .assert()
+            .success();
+
+        // Get the full bug ID
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let full_id = output
+            .lines()
+            .find(|l| l.contains("Fuzzy match test"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap();
+
+        // Create a fuzzy query by removing the second character
+        // e.g., "abc1" -> "ac1"
+        let mut fuzzy_query: String = full_id.chars().collect();
+        if fuzzy_query.len() >= 2 {
+            fuzzy_query.remove(1);
+        }
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["show", &fuzzy_query])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Fuzzy match test"));
+    }
+
+    #[test]
+    fn show_fuzzy_matching_with_missing_first_char() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Fuzzy first char test"])
+            .assert()
+            .success();
+
+        // Get the full bug ID
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let full_id = output
+            .lines()
+            .find(|l| l.contains("Fuzzy first char test"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap();
+
+        // Create a fuzzy query by removing the first character
+        // e.g., "abc1" -> "bc1"
+        let fuzzy_query: String = full_id.chars().skip(1).collect();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["show", &fuzzy_query])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Fuzzy first char test"));
+    }
+
+    #[test]
+    fn show_prefers_exact_over_fuzzy() {
+        let dir = setup_docket_repo();
+
+        // Create first bug
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "First bug for exact test"])
+            .assert()
+            .success();
+
+        // Get the ID
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let full_id = output
+            .lines()
+            .find(|l| l.contains("First bug for exact test"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap();
+
+        // Exact match should work
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["show", full_id])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("First bug for exact test"));
+    }
 }
 
 mod status_commands {

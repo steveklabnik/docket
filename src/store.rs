@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Context, Result};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use rand::Rng;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -207,7 +209,7 @@ impl Store {
         Ok(bugs)
     }
 
-    /// Get a specific bug by ID (supports prefix matching)
+    /// Get a specific bug by ID (supports prefix and fuzzy matching)
     pub fn get_bug(&self, id: &str) -> Result<Bug> {
         // First try exact match (checks sharded then flat)
         if let Some(path) = self.find_bug_path(id) {
@@ -216,20 +218,42 @@ impl Store {
         }
 
         // Try prefix match in both structures
-        let matches = self.find_matching_bugs(id)?;
+        let prefix_matches = self.find_matching_bugs(id)?;
 
-        match matches.len() {
-            0 => Err(anyhow!(
-                "bug not found: '{}'\n\
-                 Run 'docket list' to see all bugs, or 'docket new' to create one.",
-                id
-            )),
+        match prefix_matches.len() {
+            0 => {
+                // No prefix matches, try fuzzy matching
+                let fuzzy_matches = self.find_fuzzy_matches(id)?;
+                match fuzzy_matches.len() {
+                    0 => Err(anyhow!(
+                        "bug not found: '{}'\n\
+                         Run 'docket list' to see all bugs, or 'docket new' to create one.",
+                        id
+                    )),
+                    1 => {
+                        let path = self
+                            .find_bug_path(&fuzzy_matches[0])
+                            .ok_or_else(|| anyhow!("internal error: fuzzy match path not found"))?;
+                        let events = event::read_events(&path)?;
+                        event::derive_bug(&events)
+                    }
+                    _ => {
+                        // Check if top matches have the same score (truly ambiguous)
+                        // For now, just report ambiguity with all fuzzy matches
+                        Err(anyhow!(
+                            "ambiguous bug ID '{}', fuzzy matches: {}",
+                            id,
+                            fuzzy_matches.join(", ")
+                        ))
+                    }
+                }
+            }
             1 => {
-                let events = event::read_events(&matches[0])?;
+                let events = event::read_events(&prefix_matches[0])?;
                 event::derive_bug(&events)
             }
             _ => {
-                let ids: Vec<_> = matches
+                let ids: Vec<_> = prefix_matches
                     .iter()
                     .filter_map(|p| p.file_stem())
                     .filter_map(|s| s.to_str())
@@ -278,6 +302,58 @@ impl Store {
         Ok(matches)
     }
 
+    /// Find all bug IDs in the repository (for fuzzy matching)
+    fn list_all_bug_ids(&self) -> Result<Vec<String>> {
+        let bugs_dir = self.bugs_dir();
+        let mut ids = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        // Search sharded structure: .docket/bugs/*/*.jsonl
+        let sharded_pattern = bugs_dir.join("*").join("*.jsonl");
+        if let Some(pattern_str) = sharded_pattern.to_str() {
+            for entry in glob::glob(pattern_str)? {
+                let path = entry?;
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if seen.insert(stem.to_string()) {
+                        ids.push(stem.to_string());
+                    }
+                }
+            }
+        }
+
+        // Search flat structure: .docket/bugs/*.jsonl
+        let flat_pattern = bugs_dir.join("*.jsonl");
+        if let Some(pattern_str) = flat_pattern.to_str() {
+            for entry in glob::glob(pattern_str)? {
+                let path = entry?;
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if seen.insert(stem.to_string()) {
+                        ids.push(stem.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(ids)
+    }
+
+    /// Find bugs using fuzzy matching
+    /// Returns bug IDs sorted by match score (best match first)
+    fn find_fuzzy_matches(&self, query: &str) -> Result<Vec<String>> {
+        let all_ids = self.list_all_bug_ids()?;
+        let matcher = SkimMatcherV2::default();
+
+        let mut scored: Vec<(String, i64)> = all_ids
+            .into_iter()
+            .filter_map(|id| matcher.fuzzy_match(&id, query).map(|score| (id, score)))
+            .collect();
+
+        // Sort by score descending (best matches first)
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+
+        Ok(scored.into_iter().map(|(id, _)| id).collect())
+    }
+
     /// Append an event to a bug's event log
     /// If the bug exists in flat structure, migrates it to sharded first
     pub fn append_event(&self, event: &Event) -> Result<()> {
@@ -306,7 +382,7 @@ impl Store {
         event::read_events(&path)
     }
 
-    /// Resolve a bug ID prefix to the full ID
+    /// Resolve a bug ID prefix to the full ID (supports prefix and fuzzy matching)
     pub fn resolve_id(&self, id: &str) -> Result<String> {
         // First try exact match (checks sharded then flat)
         if self.find_bug_path(id).is_some() {
@@ -314,23 +390,35 @@ impl Store {
         }
 
         // Try prefix match in both structures
-        let matches = self.find_matching_bugs(id)?;
+        let prefix_matches = self.find_matching_bugs(id)?;
 
-        match matches.len() {
-            0 => Err(anyhow!(
-                "bug not found: '{}'\n\
-                 Run 'docket list' to see all bugs.",
-                id
-            )),
+        match prefix_matches.len() {
+            0 => {
+                // No prefix matches, try fuzzy matching
+                let fuzzy_matches = self.find_fuzzy_matches(id)?;
+                match fuzzy_matches.len() {
+                    0 => Err(anyhow!(
+                        "bug not found: '{}'\n\
+                         Run 'docket list' to see all bugs.",
+                        id
+                    )),
+                    1 => Ok(fuzzy_matches[0].clone()),
+                    _ => Err(anyhow!(
+                        "ambiguous bug ID '{}', fuzzy matches: {}",
+                        id,
+                        fuzzy_matches.join(", ")
+                    )),
+                }
+            }
             1 => {
-                let full_id = matches[0]
+                let full_id = prefix_matches[0]
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .ok_or_else(|| anyhow!("invalid file name"))?;
                 Ok(full_id.to_string())
             }
             _ => {
-                let ids: Vec<_> = matches
+                let ids: Vec<_> = prefix_matches
                     .iter()
                     .filter_map(|p| p.file_stem())
                     .filter_map(|s| s.to_str())
