@@ -38,7 +38,15 @@ fn main() -> Result<()> {
             all,
             sort,
             reverse,
-        } => commands::list(status.as_deref(), priority.as_deref(), all, &sort, reverse),
+            interactive,
+        } => commands::list(
+            status.as_deref(),
+            priority.as_deref(),
+            all,
+            &sort,
+            reverse,
+            interactive,
+        ),
         Commands::Show { id } => {
             let id = resolve_bug_id(id)?;
             commands::show(&id)

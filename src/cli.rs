@@ -76,6 +76,10 @@ pub enum Commands {
         /// Reverse the sort order
         #[arg(short, long)]
         reverse: bool,
+
+        /// Interactive mode for selecting and acting on bugs
+        #[arg(short, long)]
+        interactive: bool,
     },
 
     /// Show details of a bug (uses current workspace bug if no ID provided)
