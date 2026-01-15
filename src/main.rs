@@ -1,7 +1,8 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 
 use docket::commands;
+use docket::workspace;
 
 #[derive(Parser)]
 #[command(name = "docket")]
@@ -55,16 +56,16 @@ enum Commands {
         reverse: bool,
     },
 
-    /// Show details of a bug
+    /// Show details of a bug (uses current workspace bug if no ID provided)
     Show {
-        /// Bug ID (prefix match supported)
-        id: String,
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        id: Option<String>,
     },
 
-    /// Update a bug's title, body, priority, or status
+    /// Update a bug's title, body, priority, or status (uses current workspace bug if no ID provided)
     Update {
-        /// Bug ID (prefix match supported)
-        id: String,
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        id: Option<String>,
 
         /// New title for the bug
         #[arg(short, long)]
@@ -89,10 +90,10 @@ enum Commands {
         id: String,
     },
 
-    /// Mark a bug as done
+    /// Mark a bug as done (uses current workspace bug if no ID provided)
     Done {
-        /// Bug ID (prefix match supported)
-        id: String,
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        id: Option<String>,
     },
 
     /// Start working on a bug (creates workspace + runs Claude)
@@ -124,6 +125,29 @@ enum Commands {
         /// Bug ID (prefix match supported). If not provided, cleans up workspaces for done bugs.
         id: Option<String>,
     },
+
+    /// Print the current workspace's bug ID
+    Current,
+
+    /// Edit a bug's body in your editor (uses current workspace bug if no ID provided)
+    Edit {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        id: Option<String>,
+    },
+}
+
+/// Resolve bug ID from either explicit argument or current workspace.
+/// Returns an error if neither is available.
+fn resolve_bug_id(id: Option<String>) -> Result<String> {
+    match id {
+        Some(id) => Ok(id),
+        None => workspace::current_bug_id().ok_or_else(|| {
+            anyhow!(
+                "no bug ID provided and not in a workspace.\n\
+                 Either provide a bug ID or run from a workspace directory (ws-{{id}})."
+            )
+        }),
+    }
 }
 
 fn main() -> Result<()> {
@@ -146,22 +170,31 @@ fn main() -> Result<()> {
             sort,
             reverse,
         } => commands::list(status.as_deref(), priority.as_deref(), all, &sort, reverse),
-        Commands::Show { id } => commands::show(&id),
+        Commands::Show { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::show(&id)
+        }
         Commands::Update {
             id,
             title,
             body,
             priority,
             status,
-        } => commands::update(
-            &id,
-            title,
-            body.as_deref(),
-            priority.as_deref(),
-            status.as_deref(),
-        ),
+        } => {
+            let id = resolve_bug_id(id)?;
+            commands::update(
+                &id,
+                title,
+                body.as_deref(),
+                priority.as_deref(),
+                status.as_deref(),
+            )
+        }
         Commands::Approve { id } => commands::approve(&id),
-        Commands::Done { id } => commands::done(&id),
+        Commands::Done { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::done(&id)
+        }
         Commands::Work {
             id,
             skip_permissions,
@@ -169,5 +202,10 @@ fn main() -> Result<()> {
         } => commands::work(&id, skip_permissions, auto),
         Commands::Log { id, json } => commands::log(&id, json),
         Commands::Cleanup { id } => commands::cleanup(id.as_deref()),
+        Commands::Current => commands::current(),
+        Commands::Edit { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::edit(&id)
+        }
     }
 }

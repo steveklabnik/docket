@@ -1,4 +1,6 @@
 pub mod cleanup;
+pub mod current;
+pub mod edit;
 pub mod init;
 pub mod list;
 pub mod log;
@@ -9,6 +11,8 @@ pub mod update;
 pub mod work;
 
 pub use cleanup::cleanup;
+pub use current::current;
+pub use edit::edit;
 pub use init::init;
 pub use list::list;
 pub use log::log;
