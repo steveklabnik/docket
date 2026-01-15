@@ -11,6 +11,23 @@ use crate::store::Store;
 
 use super::jj;
 
+/// Extract content from between `<commit>` tags in Claude's output.
+/// Falls back to the full text if tags aren't found.
+fn extract_commit_message(output: &str) -> String {
+    let trimmed = output.trim();
+
+    // Look for <commit>...</commit> tags
+    if let Some(start) = trimmed.find("<commit>") {
+        let after_tag = &trimmed[start + 8..]; // 8 = len("<commit>")
+        if let Some(end) = after_tag.find("</commit>") {
+            return after_tag[..end].trim().to_string();
+        }
+    }
+
+    // Fallback: return trimmed output as-is
+    trimmed.to_string()
+}
+
 /// Generate a commit message using Claude Code.
 /// Returns None if Claude fails (caller should fall back to simple message).
 fn generate_commit_message(bug_id: &str) -> Option<String> {
@@ -30,7 +47,8 @@ fn generate_commit_message(bug_id: &str) -> Option<String> {
 
     match output {
         Ok(output) if output.status.success() => {
-            let message = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let raw_output = String::from_utf8_lossy(&output.stdout);
+            let message = extract_commit_message(&raw_output);
             if message.is_empty() {
                 eprintln!(
                     "{} Claude returned empty message, using fallback",
@@ -151,4 +169,42 @@ pub fn done(id: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_commit_message_with_tags() {
+        let output = r#"Based on the changes, here's the commit message:
+
+<commit>
+Add user authentication
+
+This implements OAuth2 login flow for the application.
+</commit>
+
+Let me know if you need changes!"#;
+
+        let result = extract_commit_message(output);
+        assert_eq!(
+            result,
+            "Add user authentication\n\nThis implements OAuth2 login flow for the application."
+        );
+    }
+
+    #[test]
+    fn extract_commit_message_without_tags() {
+        let output = "Add user authentication\n\nSimple commit message.";
+        let result = extract_commit_message(output);
+        assert_eq!(result, output);
+    }
+
+    #[test]
+    fn extract_commit_message_empty_tags() {
+        let output = "<commit></commit>";
+        let result = extract_commit_message(output);
+        assert_eq!(result, "");
+    }
 }

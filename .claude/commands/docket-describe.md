@@ -30,4 +30,19 @@ Generate a commit message for the current changes following Google's CL descript
 
 ## Output
 
-Output ONLY the commit message text. No markdown formatting, no code blocks, no explanation - just the raw commit message ready to be passed to `jj describe`.
+Wrap your commit message in `<commit>` tags:
+
+```
+<commit>
+Your commit message here
+</commit>
+```
+
+Output ONLY the commit message inside the tags. No preamble, no explanation, no phrases like "Here's the commit message:" - just the raw commit message text.
+
+DO NOT include text like:
+- "Based on the changes..."
+- "Here's the commit message:"
+- "This commit implements..."
+
+Start directly with the imperative verb (Add, Fix, Update, etc.).
