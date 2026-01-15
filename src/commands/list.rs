@@ -369,18 +369,31 @@ fn render_interactive_list(
 }
 
 /// Compare two bugs for sorting.
-/// Secondary sort is always by created date (oldest first) within the same primary field.
+/// Primary sort groups approved bugs (non-Draft) before unapproved (Draft).
+/// Secondary sort is by the specified field.
+/// Tertiary sort is by created date (oldest first) within the same group.
 fn compare_bugs(a: &Bug, b: &Bug, sort_by: SortBy) -> Ordering {
-    let primary = match sort_by {
-        SortBy::Priority => a.priority().cmp(b.priority()),
-        SortBy::Created => a.created().cmp(&b.created()),
-        SortBy::Status => a.status().cmp(b.status()),
-    };
+    // Primary: approved (non-Draft) bugs come before Draft bugs
+    let a_approved = !matches!(a.status(), Status::Draft);
+    let b_approved = !matches!(b.status(), Status::Draft);
 
-    // Secondary sort: oldest first (FIFO within same primary)
-    if primary == Ordering::Equal {
-        a.created().cmp(&b.created())
-    } else {
-        primary
+    match (a_approved, b_approved) {
+        (true, false) => Ordering::Less,    // a is approved, b is draft -> a first
+        (false, true) => Ordering::Greater, // a is draft, b is approved -> b first
+        _ => {
+            // Both in same approval group, use secondary sort
+            let secondary = match sort_by {
+                SortBy::Priority => a.priority().cmp(b.priority()),
+                SortBy::Created => a.created().cmp(&b.created()),
+                SortBy::Status => a.status().cmp(b.status()),
+            };
+
+            // Tertiary sort: oldest first (FIFO within same secondary)
+            if secondary == Ordering::Equal {
+                a.created().cmp(&b.created())
+            } else {
+                secondary
+            }
+        }
     }
 }
