@@ -61,6 +61,10 @@ pub enum Commands {
         /// Version to assign to this bug (can be added multiple times for backports)
         #[arg(short, long)]
         version: Option<String>,
+
+        /// Tags to assign to this bug (can be used multiple times)
+        #[arg(long)]
+        tag: Vec<String>,
     },
 
     /// List all bugs
@@ -100,6 +104,10 @@ pub enum Commands {
         /// Filter by changelog type
         #[arg(short, long)]
         changelog: Option<String>,
+
+        /// Filter by tag
+        #[arg(long)]
+        tag: Option<String>,
     },
 
     /// Show details of a bug (uses current workspace bug if no ID provided)
@@ -142,6 +150,26 @@ pub enum Commands {
         /// Remove a version from this bug
         #[arg(long)]
         remove_version: Option<String>,
+    },
+
+    /// Add a tag to a bug
+    Tag {
+        /// Bug ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: String,
+
+        /// Tag to add
+        tag: String,
+    },
+
+    /// Remove a tag from a bug
+    Untag {
+        /// Bug ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: String,
+
+        /// Tag to remove
+        tag: String,
     },
 
     /// Mark a bug as approved for work

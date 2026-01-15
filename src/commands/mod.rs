@@ -11,6 +11,8 @@ pub mod ready;
 pub mod show;
 pub mod status;
 pub mod sync;
+pub mod tag;
+pub mod untag;
 pub mod update;
 pub mod work;
 
@@ -27,5 +29,7 @@ pub use ready::ready;
 pub use show::show;
 pub use status::{approve, done};
 pub use sync::sync;
+pub use tag::tag;
+pub use untag::untag;
 pub use update::update;
 pub use work::work;

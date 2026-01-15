@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -45,6 +46,14 @@ pub enum EventData {
     /// Remove a version from a bug
     VersionRemoved {
         version: String,
+    },
+    /// Add a tag to a bug
+    TagAdded {
+        tag: String,
+    },
+    /// Remove a tag from a bug
+    TagRemoved {
+        tag: String,
     },
 }
 
@@ -103,6 +112,14 @@ impl Event {
 
     pub fn version_removed(bug_id: String, version: String) -> Self {
         Self::new(bug_id, EventData::VersionRemoved { version })
+    }
+
+    pub fn tag_added(bug_id: String, tag: String) -> Self {
+        Self::new(bug_id, EventData::TagAdded { tag })
+    }
+
+    pub fn tag_removed(bug_id: String, tag: String) -> Self {
+        Self::new(bug_id, EventData::TagRemoved { tag })
     }
 }
 
@@ -176,6 +193,7 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             created: created.timestamp,
             changelog_type: None,
             versions: Vec::new(),
+            tags: HashSet::new(),
         },
         body: initial_body,
     };
@@ -213,6 +231,12 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             }
             EventData::VersionRemoved { version } => {
                 bug.metadata.versions.retain(|v| v != version);
+            }
+            EventData::TagAdded { tag } => {
+                bug.metadata.tags.insert(tag.clone());
+            }
+            EventData::TagRemoved { tag } => {
+                bug.metadata.tags.remove(tag);
             }
         }
     }

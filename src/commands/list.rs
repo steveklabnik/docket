@@ -18,6 +18,7 @@ pub fn list(
     version_filter: Option<&str>,
     no_version: bool,
     changelog_filter: Option<&str>,
+    tag_filter: Option<&str>,
 ) -> Result<()> {
     // Parse sort field early to catch invalid input
     let sort_by: SortBy = sort_by.parse().context("invalid sort field")?;
@@ -82,6 +83,13 @@ pub fn list(
                 }
             }
 
+            // Apply tag filter
+            if let Some(tag) = tag_filter {
+                if !bug.has_tag(tag) {
+                    return false;
+                }
+            }
+
             true
         })
         .collect();
@@ -112,14 +120,15 @@ pub fn list(
 fn print_bug_list(store: &Store, bugs: &[Bug]) {
     // Print header
     println!(
-        "{:6} {:12} {:8} {:10} {}",
+        "{:6} {:12} {:8} {:10} {:20} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
         "WORKSPACE".bold(),
+        "TAGS".bold(),
         "TITLE".bold()
     );
-    println!("{}", "-".repeat(72).dimmed());
+    println!("{}", "-".repeat(92).dimmed());
 
     // Print bugs
     for bug in bugs {
@@ -148,26 +157,42 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
         .workspace_name(bug.id())
         .unwrap_or_else(|| "-".to_string());
 
+    // Format tags compactly (sorted, comma-separated, truncated if too long)
+    let tags_str = {
+        let mut tags: Vec<_> = bug.tags().iter().map(|s| s.as_str()).collect();
+        tags.sort();
+        let joined = tags.join(",");
+        if joined.len() > 18 {
+            format!("{}...", &joined[..15])
+        } else if joined.is_empty() {
+            "-".to_string()
+        } else {
+            joined
+        }
+    };
+
     let selector = if selected { ">" } else { " " };
 
     if selected {
         println!(
-            "{} {:6} {:12} {:8} {:10} {}",
+            "{} {:6} {:12} {:8} {:10} {:20} {}",
             selector.green().bold(),
             bug.id().cyan().bold(),
             status_colored.bold(),
             priority_colored.bold(),
             workspace_str.bold(),
+            tags_str.yellow().bold(),
             bug.title().bold()
         );
     } else {
         println!(
-            "{} {:6} {:12} {:8} {:10} {}",
+            "{} {:6} {:12} {:8} {:10} {:20} {}",
             selector,
             bug.id().cyan(),
             status_colored,
             priority_colored,
             workspace_str,
+            tags_str.yellow(),
             bug.title()
         );
     }
@@ -257,14 +282,15 @@ fn render_interactive_list(
 
     // Print header
     println!(
-        "  {:6} {:12} {:8} {:10} {}",
+        "  {:6} {:12} {:8} {:10} {:20} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
         "WORKSPACE".bold(),
+        "TAGS".bold(),
         "TITLE".bold()
     );
-    println!("{}", "-".repeat(74).dimmed());
+    println!("{}", "-".repeat(94).dimmed());
 
     // Print bugs with selection indicator
     for (i, bug) in bugs.iter().enumerate() {

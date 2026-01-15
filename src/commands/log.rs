@@ -119,6 +119,24 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    Version: {}", version);
             }
+            EventData::TagAdded { tag } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "tag_added".green(),
+                    actor.dimmed()
+                );
+                println!("    Tag: {}", tag.cyan());
+            }
+            EventData::TagRemoved { tag } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "tag_removed".red(),
+                    actor.dimmed()
+                );
+                println!("    Tag: {}", tag);
+            }
         }
         println!();
     }

@@ -28,6 +28,7 @@ pub fn new(
     interactive: bool,
     changelog_type_str: Option<&str>,
     version: Option<&str>,
+    tags: &[String],
 ) -> Result<()> {
     let store = Store::open()?;
 
@@ -103,7 +104,22 @@ pub fn new(
         store.append_event(&event)?;
     }
 
+    // Emit TagAdded events for each tag
+    for tag in tags {
+        let event = Event::tag_added(id.clone(), tag.clone());
+        store.append_event(&event)?;
+    }
+
     println!("{} Created bug {} - {}", "✓".green(), id.cyan(), title);
+    if !tags.is_empty() {
+        println!(
+            "  Tags: {}",
+            tags.iter()
+                .map(|t| t.yellow().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
     println!("  Edit with: {} {}", "docket show".dimmed(), id.dimmed());
 
     Ok(())

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
 
@@ -249,6 +250,8 @@ pub struct BugMetadata {
     pub changelog_type: Option<ChangelogType>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<String>,
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub tags: HashSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -306,6 +309,14 @@ impl Bug {
 
     pub fn has_version(&self, version: &str) -> bool {
         self.metadata.versions.iter().any(|v| v == version)
+    }
+
+    pub fn tags(&self) -> &HashSet<String> {
+        &self.metadata.tags
+    }
+
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.metadata.tags.contains(tag)
     }
 }
 

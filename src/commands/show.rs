@@ -40,6 +40,20 @@ pub fn show(id: &str) -> Result<()> {
         println!("{:12} {}", "Versions:".dimmed(), bug.versions().join(", "));
     }
 
+    // Show tags if any
+    if !bug.tags().is_empty() {
+        let mut tags: Vec<_> = bug.tags().iter().collect();
+        tags.sort();
+        println!(
+            "{:12} {}",
+            "Tags:".dimmed(),
+            tags.iter()
+                .map(|t| t.yellow().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
     println!();
 
     // Print body

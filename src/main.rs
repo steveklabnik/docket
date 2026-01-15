@@ -30,6 +30,7 @@ fn main() -> Result<()> {
             body,
             changelog,
             version,
+            tag,
         } => {
             let interactive = title.is_none();
             commands::new(
@@ -39,6 +40,7 @@ fn main() -> Result<()> {
                 interactive,
                 changelog.as_deref(),
                 version.as_deref(),
+                &tag,
             )
         }
         Commands::List {
@@ -51,6 +53,7 @@ fn main() -> Result<()> {
             version,
             no_version,
             changelog,
+            tag,
         } => commands::list(
             status.as_deref(),
             priority.as_deref(),
@@ -61,6 +64,7 @@ fn main() -> Result<()> {
             version.as_deref(),
             no_version,
             changelog.as_deref(),
+            tag.as_deref(),
         ),
         Commands::Show { id } => {
             let id = resolve_bug_id(id)?;
@@ -88,6 +92,8 @@ fn main() -> Result<()> {
                 remove_version.as_deref(),
             )
         }
+        Commands::Tag { id, tag } => commands::tag(&id, &tag),
+        Commands::Untag { id, tag } => commands::untag(&id, &tag),
         Commands::Approve { id } => commands::approve(&id),
         Commands::Done { id } => {
             let id = resolve_bug_id(id)?;

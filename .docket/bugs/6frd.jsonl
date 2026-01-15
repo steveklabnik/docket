@@ -1,0 +1,5 @@
+{"id":"e2ba36dd-078c-45d7-974f-8613ef5c296c","bug_id":"6frd","timestamp":"2026-01-15T05:01:59.602485596Z","type":"created","data":{"title":"Test bug with tags","priority":"medium","body":"## Goal\n\n<!-- One-sentence description of success -->\n\n## Acceptance Criteria\n\n- [ ] First criterion\n\n## Context\n\n<!-- Background information, constraints, relevant details -->\n\n## Log\n\n<!-- Notes added during implementation -->"},"actor":"DESKTOP-VV370NK"}
+{"id":"320fe619-2b76-4f13-a41d-f40029d71e1c","bug_id":"6frd","timestamp":"2026-01-15T05:01:59.602581037Z","type":"tag_added","data":{"tag":"security"},"actor":"DESKTOP-VV370NK"}
+{"id":"15caa65d-ea90-4dc7-b139-b6c0bb5804ff","bug_id":"6frd","timestamp":"2026-01-15T05:01:59.602591366Z","type":"tag_added","data":{"tag":"backend"},"actor":"DESKTOP-VV370NK"}
+{"id":"42198e9a-b355-4eb0-bf59-fd9891ede221","bug_id":"6frd","timestamp":"2026-01-15T05:02:10.815840147Z","type":"tag_added","data":{"tag":"frontend"},"actor":"DESKTOP-VV370NK"}
+{"id":"04b4814f-8e7c-4f39-b63a-96a2cf0e4d0c","bug_id":"6frd","timestamp":"2026-01-15T05:02:15.404983544Z","type":"tag_removed","data":{"tag":"security"},"actor":"DESKTOP-VV370NK"}
