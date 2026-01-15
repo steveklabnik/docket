@@ -10,6 +10,18 @@ pub struct Config {
     /// Configuration for the `work` command
     #[serde(default)]
     pub work: WorkConfig,
+
+    /// Configuration for bug templates
+    #[serde(default)]
+    pub templates: TemplatesConfig,
+}
+
+/// Configuration for bug templates
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct TemplatesConfig {
+    /// Default template to use when creating bugs (defaults to "default")
+    #[serde(default)]
+    pub default: Option<String>,
 }
 
 /// Configuration for the `work` command

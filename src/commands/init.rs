@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::fs;
 
 use crate::store::Store;
+use crate::template;
 
 const IMPLEMENT_TEMPLATE: &str = include_str!("../../templates/docket-implement.md");
 const DESCRIBE_TEMPLATE: &str = include_str!("../../templates/docket-describe.md");
@@ -32,6 +33,10 @@ pub fn init() -> Result<()> {
             "Created".green()
         );
     }
+
+    // Create .docket/templates/ with default template
+    template::create_templates_dir(store.root())?;
+    println!("  {} .docket/templates/default.md", "Created".green());
 
     println!(
         "{} Initialized docket repository at {}",

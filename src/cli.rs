@@ -54,6 +54,10 @@ pub enum Commands {
         #[arg(short, long)]
         body: Option<String>,
 
+        /// Template to use for bug body (e.g., default, feature, bugfix, chore, spike)
+        #[arg(long)]
+        template: Option<String>,
+
         /// Changelog type (feature, fix, change, deprecated, removed, security, internal)
         #[arg(short, long)]
         changelog: Option<String>,

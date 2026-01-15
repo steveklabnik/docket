@@ -5,8 +5,10 @@ use std::fs;
 use std::io::{self, Read};
 
 use crate::bug::{ChangelogType, Priority};
+use crate::config::Config;
 use crate::event::Event;
 use crate::store::Store;
+use crate::template::{self, TemplateContext};
 
 /// Read body content from a file path or stdin (if path is "-")
 fn read_body_from_source(source: &str) -> Result<String> {
@@ -26,6 +28,7 @@ pub fn new(
     title: Option<String>,
     priority_str: &str,
     body_source: Option<&str>,
+    template_name: Option<&str>,
     interactive: bool,
     changelog_type_str: Option<&str>,
     version: Option<&str>,
@@ -81,25 +84,28 @@ pub fn new(
         store.generate_id()?
     };
 
-    // Get body from source or use default template
-    let body = match body_source {
-        Some(source) => read_body_from_source(source)?,
-        None => r#"## Goal
+    // Get body from source, template, or default
+    let body = if let Some(source) = body_source {
+        // Explicit body source takes precedence
+        read_body_from_source(source)?
+    } else {
+        // Load config to get default template
+        let config = Config::load(store.root())?;
 
-<!-- One-sentence description of success -->
+        // Determine which template to use: --template flag > config default > "default"
+        let effective_template = template_name
+            .map(|s| s.to_string())
+            .or(config.templates.default)
+            .unwrap_or_else(|| "default".to_string());
 
-## Acceptance Criteria
+        // Load and process the template
+        let template_content = template::load_template(store.root(), &effective_template)?;
 
-- [ ] First criterion
+        // Create context for variable substitution
+        let ctx = TemplateContext::new(&title, &id);
 
-## Context
-
-<!-- Background information, constraints, relevant details -->
-
-## Log
-
-<!-- Notes added during implementation -->"#
-            .to_string(),
+        // Substitute variables
+        template::substitute_variables(&template_content, &ctx)
     };
 
     // Emit Created event (with parent_epic if applicable)
