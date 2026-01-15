@@ -19,7 +19,12 @@ You are helping implement a bug tracked by docket. Read the current bug context 
    - Work through each acceptance criterion systematically
    - Follow best practices for the codebase
 
-4. **Update progress** as you work:
+4. **Run clippy before finishing**:
+   - Run `cargo clippy -- -D warnings` to check for lints
+   - Fix any warnings that clippy reports
+   - This ensures CI won't fail due to clippy issues
+
+5. **Update progress** as you work:
    - Use `cargo run -- update $DOCKET_BUG` to update the bug body with progress
    - Add timestamped entries to the Log section describing what was accomplished
    - Format log entries as: `- YYYY-MM-DD: Description of progress`
