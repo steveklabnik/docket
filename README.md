@@ -182,9 +182,30 @@ docket done a1b2
 docket cleanup a1b2
 ```
 
+## Storage
+
+Bugs are stored as JSONL event logs in `.docket/bugs/`, organized using directory sharding for scalability:
+
+```
+.docket/bugs/
+├── a/
+│   ├── abc1.jsonl
+│   └── a9x2.jsonl
+├── b/
+│   └── bk47.jsonl
+└── ...
+```
+
+The first character of each bug ID determines its shard directory. This structure:
+- Reduces per-directory file count for large repositories
+- Improves file system performance with thousands of bugs
+- Becomes beneficial at ~500+ bugs (varies by file system)
+
+Backward compatibility is maintained: bugs in the flat structure (`.docket/bugs/*.jsonl`) are automatically migrated to sharded directories when updated.
+
 ## Bug Format
 
-Bugs are stored as JSONL event logs in `.docket/bugs/`. The recommended body format:
+The recommended body format:
 
 ```markdown
 ## Goal

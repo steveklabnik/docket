@@ -72,26 +72,125 @@ impl Store {
         self.root.join(BUGS_DIR)
     }
 
-    /// Path to a specific bug's event log file
+    /// Get the shard key (first character) for a bug ID
+    fn shard_key(id: &str) -> Option<char> {
+        id.chars().next()
+    }
+
+    /// Path to a specific bug's event log file (sharded structure)
+    /// Returns the sharded path: .docket/bugs/{first_char}/{id}.jsonl
     fn bug_path(&self, id: &str) -> PathBuf {
+        if let Some(shard) = Self::shard_key(id) {
+            self.bugs_dir()
+                .join(shard.to_string())
+                .join(format!("{}.jsonl", id))
+        } else {
+            // Fallback for empty ID (shouldn't happen in practice)
+            self.bugs_dir().join(format!("{}.jsonl", id))
+        }
+    }
+
+    /// Path to the legacy flat location for a bug
+    fn bug_path_flat(&self, id: &str) -> PathBuf {
         self.bugs_dir().join(format!("{}.jsonl", id))
     }
 
-    /// List all bugs
+    /// Find the actual path where a bug file exists
+    /// Checks sharded path first, then falls back to flat path for backward compatibility
+    fn find_bug_path(&self, id: &str) -> Option<PathBuf> {
+        let sharded = self.bug_path(id);
+        if sharded.exists() {
+            return Some(sharded);
+        }
+        let flat = self.bug_path_flat(id);
+        if flat.exists() {
+            return Some(flat);
+        }
+        None
+    }
+
+    /// Migrate a bug file from flat to sharded structure if needed
+    fn migrate_to_sharded(&self, id: &str) -> Result<()> {
+        let flat_path = self.bug_path_flat(id);
+        if !flat_path.exists() {
+            return Ok(()); // Nothing to migrate
+        }
+
+        let sharded_path = self.bug_path(id);
+        if sharded_path.exists() {
+            return Ok(()); // Already migrated
+        }
+
+        // Create shard directory if needed
+        if let Some(shard_dir) = sharded_path.parent() {
+            fs::create_dir_all(shard_dir).with_context(|| {
+                format!("failed to create shard directory {}", shard_dir.display())
+            })?;
+        }
+
+        // Move the file
+        fs::rename(&flat_path, &sharded_path).with_context(|| {
+            format!(
+                "failed to migrate {} to {}",
+                flat_path.display(),
+                sharded_path.display()
+            )
+        })?;
+
+        Ok(())
+    }
+
+    /// List all bugs (searches both sharded and flat structures)
     pub fn list_bugs(&self) -> Result<Vec<Bug>> {
-        let pattern = self.bugs_dir().join("*.jsonl");
-        let pattern_str = pattern
+        let bugs_dir = self.bugs_dir();
+
+        // Pattern for sharded structure: .docket/bugs/*/*.jsonl
+        let sharded_pattern = bugs_dir.join("*").join("*.jsonl");
+        let sharded_pattern_str = sharded_pattern
+            .to_str()
+            .ok_or_else(|| anyhow!("invalid path encoding"))?;
+
+        // Pattern for flat structure (backward compat): .docket/bugs/*.jsonl
+        let flat_pattern = bugs_dir.join("*.jsonl");
+        let flat_pattern_str = flat_pattern
             .to_str()
             .ok_or_else(|| anyhow!("invalid path encoding"))?;
 
         let mut bugs = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
 
-        for entry in glob::glob(pattern_str)? {
+        // Search sharded structure first
+        for entry in glob::glob(sharded_pattern_str)? {
             let path = entry?;
             let events = event::read_events(&path)?;
 
             match event::derive_bug(&events) {
-                Ok(bug) => bugs.push(bug),
+                Ok(bug) => {
+                    seen_ids.insert(bug.id().to_string());
+                    bugs.push(bug);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to derive bug from {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Search flat structure for any bugs not yet migrated
+        for entry in glob::glob(flat_pattern_str)? {
+            let path = entry?;
+            let events = event::read_events(&path)?;
+
+            match event::derive_bug(&events) {
+                Ok(bug) => {
+                    // Only add if not already found in sharded structure
+                    if !seen_ids.contains(bug.id()) {
+                        bugs.push(bug);
+                    }
+                }
                 Err(e) => {
                     eprintln!(
                         "warning: failed to derive bug from {}: {}",
@@ -110,20 +209,14 @@ impl Store {
 
     /// Get a specific bug by ID (supports prefix matching)
     pub fn get_bug(&self, id: &str) -> Result<Bug> {
-        // First try exact match
-        let exact_path = self.bug_path(id);
-        if exact_path.exists() {
-            let events = event::read_events(&exact_path)?;
+        // First try exact match (checks sharded then flat)
+        if let Some(path) = self.find_bug_path(id) {
+            let events = event::read_events(&path)?;
             return event::derive_bug(&events);
         }
 
-        // Try prefix match
-        let pattern = self.bugs_dir().join(format!("{}*.jsonl", id));
-        let pattern_str = pattern
-            .to_str()
-            .ok_or_else(|| anyhow!("invalid path encoding"))?;
-
-        let matches: Vec<_> = glob::glob(pattern_str)?.collect::<Result<Vec<_>, _>>()?;
+        // Try prefix match in both structures
+        let matches = self.find_matching_bugs(id)?;
 
         match matches.len() {
             0 => Err(anyhow!(
@@ -150,40 +243,78 @@ impl Store {
         }
     }
 
+    /// Find all bug files matching a prefix (searches both sharded and flat structures)
+    fn find_matching_bugs(&self, prefix: &str) -> Result<Vec<PathBuf>> {
+        let bugs_dir = self.bugs_dir();
+        let mut matches = Vec::new();
+        let mut seen_stems = std::collections::HashSet::new();
+
+        // Search sharded structure: .docket/bugs/*/{prefix}*.jsonl
+        let sharded_pattern = bugs_dir.join("*").join(format!("{}*.jsonl", prefix));
+        if let Some(pattern_str) = sharded_pattern.to_str() {
+            for entry in glob::glob(pattern_str)? {
+                let path = entry?;
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    seen_stems.insert(stem.to_string());
+                    matches.push(path);
+                }
+            }
+        }
+
+        // Search flat structure: .docket/bugs/{prefix}*.jsonl
+        let flat_pattern = bugs_dir.join(format!("{}*.jsonl", prefix));
+        if let Some(pattern_str) = flat_pattern.to_str() {
+            for entry in glob::glob(pattern_str)? {
+                let path = entry?;
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    // Only add if not found in sharded structure
+                    if !seen_stems.contains(stem) {
+                        matches.push(path);
+                    }
+                }
+            }
+        }
+
+        Ok(matches)
+    }
+
     /// Append an event to a bug's event log
+    /// If the bug exists in flat structure, migrates it to sharded first
     pub fn append_event(&self, event: &Event) -> Result<()> {
+        // Migrate from flat to sharded if needed
+        self.migrate_to_sharded(&event.bug_id)?;
+
+        // Get the sharded path and ensure directory exists
         let path = self.bug_path(&event.bug_id);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create directory {}", parent.display()))?;
+        }
+
         event::append_event(&path, event)
     }
 
     /// Get all events for a bug
     pub fn get_events(&self, id: &str) -> Result<Vec<Event>> {
-        let path = self.bug_path(id);
-        if !path.exists() {
-            return Err(anyhow!(
+        let path = self.find_bug_path(id).ok_or_else(|| {
+            anyhow!(
                 "bug not found: '{}'\n\
                  Run 'docket list' to see all bugs.",
                 id
-            ));
-        }
+            )
+        })?;
         event::read_events(&path)
     }
 
     /// Resolve a bug ID prefix to the full ID
     pub fn resolve_id(&self, id: &str) -> Result<String> {
-        // First try exact match
-        let exact_path = self.bug_path(id);
-        if exact_path.exists() {
+        // First try exact match (checks sharded then flat)
+        if self.find_bug_path(id).is_some() {
             return Ok(id.to_string());
         }
 
-        // Try prefix match
-        let pattern = self.bugs_dir().join(format!("{}*.jsonl", id));
-        let pattern_str = pattern
-            .to_str()
-            .ok_or_else(|| anyhow!("invalid path encoding"))?;
-
-        let matches: Vec<_> = glob::glob(pattern_str)?.collect::<Result<Vec<_>, _>>()?;
+        // Try prefix match in both structures
+        let matches = self.find_matching_bugs(id)?;
 
         match matches.len() {
             0 => Err(anyhow!(
@@ -226,8 +357,8 @@ impl Store {
                 })
                 .collect();
 
-            let path = self.bug_path(&id);
-            if !path.exists() {
+            // Check both sharded and flat paths to ensure uniqueness
+            if self.find_bug_path(&id).is_none() {
                 return Ok(id);
             }
         }
@@ -237,20 +368,34 @@ impl Store {
 
     /// Generate the next child ID for an epic (e.g., abc1.1, abc1.2, abc1.3)
     pub fn generate_child_id(&self, parent_id: &str) -> Result<String> {
-        // Find existing children to determine next number
-        let pattern = self.bugs_dir().join(format!("{}.*.jsonl", parent_id));
-        let pattern_str = pattern
-            .to_str()
-            .ok_or_else(|| anyhow!("invalid path encoding"))?;
+        let bugs_dir = self.bugs_dir();
 
+        // Find existing children in both sharded and flat structures
         let mut max_num: u32 = 0;
-        for path in glob::glob(pattern_str)?.flatten() {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                // Extract the number after the dot (e.g., "abc1.3" -> 3)
-                if let Some(num_str) = stem.strip_prefix(&format!("{}.", parent_id)) {
-                    if let Ok(num) = num_str.parse::<u32>() {
-                        max_num = max_num.max(num);
-                    }
+
+        // Helper to extract child number from path
+        let extract_num = |path: &Path| -> Option<u32> {
+            let stem = path.file_stem()?.to_str()?;
+            let num_str = stem.strip_prefix(&format!("{}.", parent_id))?;
+            num_str.parse::<u32>().ok()
+        };
+
+        // Search sharded structure: .docket/bugs/*/{parent_id}.*.jsonl
+        let sharded_pattern = bugs_dir.join("*").join(format!("{}.*.jsonl", parent_id));
+        if let Some(pattern_str) = sharded_pattern.to_str() {
+            for path in glob::glob(pattern_str)?.flatten() {
+                if let Some(num) = extract_num(&path) {
+                    max_num = max_num.max(num);
+                }
+            }
+        }
+
+        // Search flat structure: .docket/bugs/{parent_id}.*.jsonl
+        let flat_pattern = bugs_dir.join(format!("{}.*.jsonl", parent_id));
+        if let Some(pattern_str) = flat_pattern.to_str() {
+            for path in glob::glob(pattern_str)?.flatten() {
+                if let Some(num) = extract_num(&path) {
+                    max_num = max_num.max(num);
                 }
             }
         }
