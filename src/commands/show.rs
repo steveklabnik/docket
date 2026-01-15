@@ -18,6 +18,7 @@ pub fn show(id: &str) -> Result<()> {
         Status::Draft => status_str.dimmed(),
         Status::Approved => status_str.green(),
         Status::InProgress => status_str.yellow(),
+        Status::Review => status_str.magenta(),
         Status::Done => status_str.blue(),
         Status::NotPlanned => status_str.red(),
     };

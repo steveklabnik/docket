@@ -40,6 +40,14 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
                 bug.id().cyan()
             );
         }
+        Status::Review => {
+            eprintln!(
+                "{} Bug {} is in review. Use 'docket reject {}' to return to in-progress first.",
+                "!".yellow(),
+                bug.id().cyan(),
+                bug.id()
+            );
+        }
         Status::Done => {
             return Err(anyhow!("bug {} is already done", bug.id()));
         }

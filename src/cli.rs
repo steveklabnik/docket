@@ -81,6 +81,10 @@ pub enum Commands {
         #[arg(short, long)]
         all: bool,
 
+        /// Show only bugs in review (shorthand for --status review)
+        #[arg(long)]
+        review: bool,
+
         /// Sort by field (priority, created, status)
         #[arg(long, default_value = "priority")]
         sort: String,
@@ -177,6 +181,20 @@ pub enum Commands {
         /// Bug ID (prefix match supported)
         #[arg(add = ArgValueCompleter::new(complete_bug_id))]
         id: String,
+    },
+
+    /// Submit a bug for code review (uses current workspace bug if no ID provided)
+    Review {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: Option<String>,
+    },
+
+    /// Reject a bug from review back to in progress
+    Reject {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: Option<String>,
     },
 
     /// Mark a bug as done (uses current workspace bug if no ID provided)

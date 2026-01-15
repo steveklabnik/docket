@@ -47,6 +47,7 @@ fn main() -> Result<()> {
             status,
             priority,
             all,
+            review,
             sort,
             reverse,
             interactive,
@@ -54,18 +55,26 @@ fn main() -> Result<()> {
             no_version,
             changelog,
             tag,
-        } => commands::list(
-            status.as_deref(),
-            priority.as_deref(),
-            all,
-            &sort,
-            reverse,
-            interactive,
-            version.as_deref(),
-            no_version,
-            changelog.as_deref(),
-            tag.as_deref(),
-        ),
+        } => {
+            // --review flag is shorthand for --status review
+            let status_filter = if review {
+                Some("review".to_string())
+            } else {
+                status
+            };
+            commands::list(
+                status_filter.as_deref(),
+                priority.as_deref(),
+                all,
+                &sort,
+                reverse,
+                interactive,
+                version.as_deref(),
+                no_version,
+                changelog.as_deref(),
+                tag.as_deref(),
+            )
+        }
         Commands::Show { id } => {
             let id = resolve_bug_id(id)?;
             commands::show(&id)
@@ -95,6 +104,14 @@ fn main() -> Result<()> {
         Commands::Tag { id, tag } => commands::tag(&id, &tag),
         Commands::Untag { id, tag } => commands::untag(&id, &tag),
         Commands::Approve { id } => commands::approve(&id),
+        Commands::Review { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::review(&id)
+        }
+        Commands::Reject { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::reject(&id)
+        }
         Commands::Done { id, auto, force } => {
             let id = resolve_bug_id(id)?;
             commands::done(&id, auto, force)

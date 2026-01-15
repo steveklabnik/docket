@@ -13,6 +13,7 @@ pub enum Status {
     Draft,
     Approved,
     InProgress,
+    Review,
     Done,
     NotPlanned,
 }
@@ -20,11 +21,12 @@ pub enum Status {
 impl Status {
     fn sort_order(&self) -> u8 {
         match self {
-            Status::InProgress => 0, // Active work first
-            Status::Approved => 1,   // Ready to work
-            Status::Draft => 2,      // Needs approval
-            Status::Done => 3,       // Completed
-            Status::NotPlanned => 4, // Won't do
+            Status::Review => 0,     // Awaiting review
+            Status::InProgress => 1, // Active work
+            Status::Approved => 2,   // Ready to work
+            Status::Draft => 3,      // Needs approval
+            Status::Done => 4,       // Completed
+            Status::NotPlanned => 5, // Won't do
         }
     }
 }
@@ -47,6 +49,7 @@ impl fmt::Display for Status {
             Status::Draft => write!(f, "draft"),
             Status::Approved => write!(f, "approved"),
             Status::InProgress => write!(f, "in-progress"),
+            Status::Review => write!(f, "review"),
             Status::Done => write!(f, "done"),
             Status::NotPlanned => write!(f, "not-planned"),
         }
@@ -61,6 +64,7 @@ impl FromStr for Status {
             "draft" => Ok(Status::Draft),
             "approved" => Ok(Status::Approved),
             "in-progress" | "in_progress" | "inprogress" => Ok(Status::InProgress),
+            "review" => Ok(Status::Review),
             "done" => Ok(Status::Done),
             "not-planned" | "not_planned" | "notplanned" => Ok(Status::NotPlanned),
             _ => Err(anyhow!("unknown status: {}", s)),
@@ -391,10 +395,23 @@ mod tests {
     }
 
     #[test]
+    fn status_from_str_review() {
+        assert!(matches!(
+            Status::from_str("review").unwrap(),
+            Status::Review
+        ));
+        assert!(matches!(
+            Status::from_str("REVIEW").unwrap(),
+            Status::Review
+        ));
+    }
+
+    #[test]
     fn status_display() {
         assert_eq!(Status::Draft.to_string(), "draft");
         assert_eq!(Status::Approved.to_string(), "approved");
         assert_eq!(Status::InProgress.to_string(), "in-progress");
+        assert_eq!(Status::Review.to_string(), "review");
         assert_eq!(Status::Done.to_string(), "done");
         assert_eq!(Status::NotPlanned.to_string(), "not-planned");
     }
@@ -511,7 +528,8 @@ Body"#;
     // Status ordering tests
     #[test]
     fn status_ord_workflow_order() {
-        // InProgress (active) should come first
+        // Review (awaiting review) should come first
+        assert!(Status::Review < Status::InProgress);
         assert!(Status::InProgress < Status::Approved);
         assert!(Status::Approved < Status::Draft);
         assert!(Status::Draft < Status::Done);
@@ -526,11 +544,13 @@ Body"#;
             Status::InProgress,
             Status::NotPlanned,
             Status::Approved,
+            Status::Review,
         ];
         statuses.sort();
         assert_eq!(
             statuses,
             vec![
+                Status::Review,
                 Status::InProgress,
                 Status::Approved,
                 Status::Draft,
