@@ -193,4 +193,15 @@ pub enum Commands {
         /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
         shell: String,
     },
+
+    /// Show highest priority approved bugs ready for work
+    Ready {
+        /// Number of bugs to show
+        #[arg(short = 'n', long, default_value = "1")]
+        count: usize,
+
+        /// Start work on the top bug immediately
+        #[arg(long)]
+        work: bool,
+    },
 }

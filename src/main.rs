@@ -84,5 +84,6 @@ fn main() -> Result<()> {
             dry_run,
         } => commands::sync(id.as_deref(), no_push, no_fetch, no_rebase, dry_run),
         Commands::Completions { shell } => commands::completions(&shell),
+        Commands::Ready { count, work } => commands::ready(count, work),
     }
 }

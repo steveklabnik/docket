@@ -772,3 +772,192 @@ mod log_command {
             .stdout(predicate::str::contains("approved"));
     }
 }
+
+mod ready_command {
+    use super::*;
+
+    fn create_bug_and_get_id(dir: &TempDir, title: &str, priority: &str) -> String {
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", title, "--priority", priority])
+            .assert()
+            .success();
+
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        output
+            .lines()
+            .find(|l| l.contains(title))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn ready_shows_no_bugs_when_none_approved() {
+        let dir = setup_docket_repo();
+
+        // Create a draft bug
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Draft bug"])
+            .assert()
+            .success();
+
+        // Ready should show no bugs
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("ready")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("No approved bugs"));
+    }
+
+    #[test]
+    fn ready_shows_single_approved_bug() {
+        let dir = setup_docket_repo();
+
+        let id = create_bug_and_get_id(&dir, "Ready test bug", "high");
+
+        // Approve it
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["approve", &id])
+            .assert()
+            .success();
+
+        // Ready should show this bug
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("ready")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Ready to work"))
+            .stdout(predicate::str::contains("Ready test bug"))
+            .stdout(predicate::str::contains("high"));
+    }
+
+    #[test]
+    fn ready_shows_highest_priority_first() {
+        let dir = setup_docket_repo();
+
+        // Create bugs with different priorities
+        let low_id = create_bug_and_get_id(&dir, "Low priority bug", "low");
+        let high_id = create_bug_and_get_id(&dir, "High priority bug", "high");
+        let medium_id = create_bug_and_get_id(&dir, "Medium priority bug", "medium");
+
+        // Approve all
+        for id in [&low_id, &high_id, &medium_id] {
+            docket_cmd()
+                .current_dir(dir.path())
+                .args(["approve", id])
+                .assert()
+                .success();
+        }
+
+        // Default ready should show high priority bug
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("ready")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("High priority bug"));
+
+        // ready -n 3 should show all in priority order
+        let output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["ready", "-n", "3"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let high_pos = stdout.find("High priority bug").unwrap();
+        let medium_pos = stdout.find("Medium priority bug").unwrap();
+        let low_pos = stdout.find("Low priority bug").unwrap();
+
+        assert!(
+            high_pos < medium_pos,
+            "High priority should come before medium"
+        );
+        assert!(
+            medium_pos < low_pos,
+            "Medium priority should come before low"
+        );
+    }
+
+    #[test]
+    fn ready_count_flag_limits_output() {
+        let dir = setup_docket_repo();
+
+        // Create and approve multiple bugs
+        for i in 1..=5 {
+            let id = create_bug_and_get_id(&dir, &format!("Bug {}", i), "medium");
+            docket_cmd()
+                .current_dir(dir.path())
+                .args(["approve", &id])
+                .assert()
+                .success();
+        }
+
+        // ready -n 2 should show exactly 2 bugs (numbered list format)
+        let output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["ready", "-n", "2"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        // Count numbered entries
+        let numbered_lines = stdout
+            .lines()
+            .filter(|l| l.starts_with("1.") || l.starts_with("2."))
+            .count();
+        assert_eq!(numbered_lines, 2, "Should show exactly 2 bugs");
+
+        // Should not have a third entry
+        assert!(!stdout.contains("3."), "Should not show a third bug");
+    }
+
+    #[test]
+    fn ready_excludes_non_approved_bugs() {
+        let dir = setup_docket_repo();
+
+        // Create bugs with different statuses
+        let _draft_id = create_bug_and_get_id(&dir, "Draft bug", "high");
+        let approved_id = create_bug_and_get_id(&dir, "Approved bug", "medium");
+
+        // Only approve one
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["approve", &approved_id])
+            .assert()
+            .success();
+
+        // Ready should only show the approved bug
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("ready")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Approved bug"))
+            .stdout(predicate::str::contains("Draft bug").not());
+
+        // If we mark the approved one as in-progress, it should not appear in ready
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["update", &approved_id, "--status", "in-progress"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("ready")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("No approved bugs"));
+    }
+}
