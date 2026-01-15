@@ -71,13 +71,14 @@ pub fn list(
 
     // Print header
     println!(
-        "{:6} {:12} {:8} {}",
+        "{:6} {:12} {:8} {:10} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
+        "WORKSPACE".bold(),
         "TITLE".bold()
     );
-    println!("{}", "-".repeat(60).dimmed());
+    println!("{}", "-".repeat(72).dimmed());
 
     // Print bugs
     for bug in &filtered {
@@ -97,11 +98,16 @@ pub fn list(
             Priority::High => priority_str.red(),
         };
 
+        let workspace_str = store
+            .workspace_name(bug.id())
+            .unwrap_or_else(|| "-".to_string());
+
         println!(
-            "{:6} {:12} {:8} {}",
+            "{:6} {:12} {:8} {:10} {}",
             bug.id().cyan(),
             status_colored,
             priority_colored,
+            workspace_str,
             bug.title()
         );
     }

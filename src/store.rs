@@ -239,4 +239,40 @@ impl Store {
     pub fn root(&self) -> &Path {
         &self.root
     }
+
+    /// Get the directory where workspace directories (ws-*) are located.
+    /// This is the parent of .docket, unless we're inside a workspace directory,
+    /// in which case we need to go up one more level.
+    pub fn workspaces_dir(&self) -> Option<PathBuf> {
+        let parent = self.root.parent()?;
+
+        // Check if we're inside a workspace directory (ws-*)
+        if let Some(dir_name) = parent.file_name().and_then(|n| n.to_str()) {
+            if dir_name.starts_with("ws-") {
+                // We're inside a workspace, go up one more level
+                return parent.parent().map(|p| p.to_path_buf());
+            }
+        }
+
+        Some(parent.to_path_buf())
+    }
+
+    /// Check if a workspace directory exists for a given bug ID
+    pub fn has_workspace(&self, bug_id: &str) -> bool {
+        if let Some(workspaces_dir) = self.workspaces_dir() {
+            let ws_path = workspaces_dir.join(format!("ws-{}", bug_id));
+            ws_path.is_dir()
+        } else {
+            false
+        }
+    }
+
+    /// Get the workspace name for a bug ID if it exists
+    pub fn workspace_name(&self, bug_id: &str) -> Option<String> {
+        if self.has_workspace(bug_id) {
+            Some(format!("ws-{}", bug_id))
+        } else {
+            None
+        }
+    }
 }
