@@ -29,6 +29,17 @@ pub fn show(id: &str) -> Result<()> {
         "Created:".dimmed(),
         bug.metadata.created.format("%Y-%m-%d %H:%M")
     );
+
+    // Show changelog type if set
+    if let Some(ct) = bug.changelog_type() {
+        println!("{:12} {}", "Changelog:".dimmed(), ct);
+    }
+
+    // Show versions if any
+    if !bug.versions().is_empty() {
+        println!("{:12} {}", "Versions:".dimmed(), bug.versions().join(", "));
+    }
+
     println!();
 
     // Print body

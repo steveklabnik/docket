@@ -121,6 +121,88 @@ impl FromStr for Priority {
     }
 }
 
+/// Changelog type determines which section a bug appears in when generating changelogs
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum ChangelogType {
+    /// "Added" section - new features
+    Feature,
+    /// "Fixed" section - bug fixes
+    Fix,
+    /// "Changed" section - changes to existing functionality
+    Change,
+    /// "Deprecated" section - soon-to-be removed features
+    Deprecated,
+    /// "Removed" section - removed features
+    Removed,
+    /// "Security" section - security fixes
+    Security,
+    /// Internal change - does not appear in changelog
+    Internal,
+}
+
+impl fmt::Display for ChangelogType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChangelogType::Feature => write!(f, "feature"),
+            ChangelogType::Fix => write!(f, "fix"),
+            ChangelogType::Change => write!(f, "change"),
+            ChangelogType::Deprecated => write!(f, "deprecated"),
+            ChangelogType::Removed => write!(f, "removed"),
+            ChangelogType::Security => write!(f, "security"),
+            ChangelogType::Internal => write!(f, "internal"),
+        }
+    }
+}
+
+impl FromStr for ChangelogType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "feature" | "feat" | "added" => Ok(ChangelogType::Feature),
+            "fix" | "fixed" => Ok(ChangelogType::Fix),
+            "change" | "changed" => Ok(ChangelogType::Change),
+            "deprecated" | "deprecate" => Ok(ChangelogType::Deprecated),
+            "removed" | "remove" => Ok(ChangelogType::Removed),
+            "security" | "sec" => Ok(ChangelogType::Security),
+            "internal" | "int" | "chore" => Ok(ChangelogType::Internal),
+            _ => Err(anyhow!(
+                "unknown changelog type: {}. Valid options: feature, fix, change, deprecated, removed, security, internal",
+                s
+            )),
+        }
+    }
+}
+
+impl ChangelogType {
+    /// Returns the Keep a Changelog section header for this type
+    pub fn section_header(&self) -> Option<&'static str> {
+        match self {
+            ChangelogType::Feature => Some("Added"),
+            ChangelogType::Fix => Some("Fixed"),
+            ChangelogType::Change => Some("Changed"),
+            ChangelogType::Deprecated => Some("Deprecated"),
+            ChangelogType::Removed => Some("Removed"),
+            ChangelogType::Security => Some("Security"),
+            ChangelogType::Internal => None, // Internal changes don't appear in changelog
+        }
+    }
+
+    /// Sort order for changelog sections (follows Keep a Changelog convention)
+    pub fn sort_order(&self) -> u8 {
+        match self {
+            ChangelogType::Security => 0, // Security first (important)
+            ChangelogType::Feature => 1,  // Added
+            ChangelogType::Change => 2,   // Changed
+            ChangelogType::Deprecated => 3,
+            ChangelogType::Removed => 4,
+            ChangelogType::Fix => 5,      // Fixed
+            ChangelogType::Internal => 6, // Not shown, but for completeness
+        }
+    }
+}
+
 /// Sort field for listing bugs
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SortBy {
@@ -163,6 +245,10 @@ pub struct BugMetadata {
     pub status: Status,
     pub priority: Priority,
     pub created: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changelog_type: Option<ChangelogType>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -208,6 +294,18 @@ impl Bug {
 
     pub fn created(&self) -> DateTime<Utc> {
         self.metadata.created
+    }
+
+    pub fn changelog_type(&self) -> Option<&ChangelogType> {
+        self.metadata.changelog_type.as_ref()
+    }
+
+    pub fn versions(&self) -> &[String] {
+        &self.metadata.versions
+    }
+
+    pub fn has_version(&self, version: &str) -> bool {
+        self.metadata.versions.iter().any(|v| v == version)
     }
 }
 

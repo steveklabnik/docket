@@ -5,7 +5,7 @@ Generate a commit message for the current changes following Google's CL descript
 ## Instructions
 
 1. Run `jj show --git` to see the current changes (files modified and diff)
-2. Run `cargo run -- show $DOCKET_BUG` to get the bug title and description for context
+2. Run `cargo run -- show $DOCKET_BUG` to get the bug title, description, and changelog type for context
 
 ## Commit Message Format
 
@@ -13,6 +13,12 @@ Generate a commit message for the current changes following Google's CL descript
 - Use imperative mood: "Add", "Fix", "Remove" (not "Added", "Fixing", "Removed")
 - Should be searchable and stand alone
 - Keep it concise but descriptive
+- If the bug has a changelog type, use it to inform the verb:
+  - feature → "Add ..."
+  - fix → "Fix ..."
+  - change → "Update ...", "Improve ...", "Refactor ..."
+  - removed → "Remove ..."
+  - security → "Fix ..." (mention security aspect)
 
 **Blank line**
 

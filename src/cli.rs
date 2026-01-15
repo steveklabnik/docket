@@ -53,6 +53,14 @@ pub enum Commands {
         /// Read body from file (use - for stdin)
         #[arg(short, long)]
         body: Option<String>,
+
+        /// Changelog type (feature, fix, change, deprecated, removed, security, internal)
+        #[arg(short, long)]
+        changelog: Option<String>,
+
+        /// Version to assign to this bug (can be added multiple times for backports)
+        #[arg(short, long)]
+        version: Option<String>,
     },
 
     /// List all bugs
@@ -80,6 +88,18 @@ pub enum Commands {
         /// Interactive mode for selecting and acting on bugs
         #[arg(short, long)]
         interactive: bool,
+
+        /// Filter by version
+        #[arg(short, long)]
+        version: Option<String>,
+
+        /// Show only bugs without a version (unreleased)
+        #[arg(long)]
+        no_version: bool,
+
+        /// Filter by changelog type
+        #[arg(short, long)]
+        changelog: Option<String>,
     },
 
     /// Show details of a bug (uses current workspace bug if no ID provided)
@@ -110,6 +130,18 @@ pub enum Commands {
         /// New status (draft, approved, in-progress, done, not-planned)
         #[arg(short, long)]
         status: Option<String>,
+
+        /// Changelog type (feature, fix, change, deprecated, removed, security, internal)
+        #[arg(short, long)]
+        changelog: Option<String>,
+
+        /// Add a version to this bug (can be used multiple times for backports)
+        #[arg(short, long)]
+        version: Option<String>,
+
+        /// Remove a version from this bug
+        #[arg(long)]
+        remove_version: Option<String>,
     },
 
     /// Mark a bug as approved for work
@@ -207,5 +239,19 @@ pub enum Commands {
         /// Start work on the top bug immediately
         #[arg(long)]
         work: bool,
+    },
+
+    /// Generate changelog for a version
+    Changelog {
+        /// Version to generate changelog for (e.g., "1.2.0")
+        version: String,
+
+        /// Preview the changelog without writing to file
+        #[arg(long)]
+        preview: bool,
+
+        /// Custom file to write to (default: CHANGELOG.md)
+        #[arg(short, long)]
+        file: Option<String>,
     },
 }

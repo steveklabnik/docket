@@ -30,6 +30,25 @@ You are helping implement a bug tracked by docket. Read the current bug context 
    - Format log entries as: `- YYYY-MM-DD: Description of progress`
    - Check off acceptance criteria by changing `- [ ]` to `- [x]`
 
+5. **Set changelog type** after completing work:
+   - Check if the bug already has a changelog type set (shown in `cargo run -- show`)
+   - If not set, ask the user: "What type of change is this for the changelog?"
+   - Options: feature, fix, change, deprecated, removed, security, internal
+   - Set it via: `cargo run -- update $DOCKET_BUG --changelog TYPE`
+   - Use `internal` for changes that shouldn't appear in public changelogs
+
+## Changelog Type Guide
+
+| Type | When to use |
+|------|-------------|
+| feature | New functionality or capabilities |
+| fix | Bug fixes |
+| change | Changes to existing functionality |
+| deprecated | Features that will be removed |
+| removed | Features that were removed |
+| security | Security-related fixes |
+| internal | Refactoring, tests, docs, tooling (not in changelog) |
+
 ## Getting Started
 
 Begin by running `cargo run -- show $DOCKET_BUG` and presenting a summary of the bug to the user, then propose an implementation plan.

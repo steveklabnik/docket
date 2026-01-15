@@ -4,7 +4,7 @@ use dialoguer::{Input, Select};
 use std::fs;
 use std::io::{self, Read};
 
-use crate::bug::Priority;
+use crate::bug::{ChangelogType, Priority};
 use crate::event::Event;
 use crate::store::Store;
 
@@ -26,6 +26,8 @@ pub fn new(
     priority_str: &str,
     body_source: Option<&str>,
     interactive: bool,
+    changelog_type_str: Option<&str>,
+    version: Option<&str>,
 ) -> Result<()> {
     let store = Store::open()?;
 
@@ -82,6 +84,24 @@ pub fn new(
     // Emit Created event
     let event = Event::created(id.clone(), title.clone(), priority, body);
     store.append_event(&event)?;
+
+    // Emit ChangelogTypeSet event if changelog type was provided
+    if let Some(ct_str) = changelog_type_str {
+        let changelog_type: ChangelogType = ct_str.parse().with_context(|| {
+            format!(
+                "invalid changelog type '{}'. Valid options: feature, fix, change, deprecated, removed, security, internal",
+                ct_str
+            )
+        })?;
+        let event = Event::changelog_type_set(id.clone(), changelog_type);
+        store.append_event(&event)?;
+    }
+
+    // Emit VersionAdded event if version was provided
+    if let Some(ver) = version {
+        let event = Event::version_added(id.clone(), ver.to_string());
+        store.append_event(&event)?;
+    }
 
     println!("{} Created bug {} - {}", "✓".green(), id.cyan(), title);
     println!("  Edit with: {} {}", "docket show".dimmed(), id.dimmed());

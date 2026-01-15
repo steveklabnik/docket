@@ -28,9 +28,18 @@ fn main() -> Result<()> {
             title,
             priority,
             body,
+            changelog,
+            version,
         } => {
             let interactive = title.is_none();
-            commands::new(title, &priority, body.as_deref(), interactive)
+            commands::new(
+                title,
+                &priority,
+                body.as_deref(),
+                interactive,
+                changelog.as_deref(),
+                version.as_deref(),
+            )
         }
         Commands::List {
             status,
@@ -39,6 +48,9 @@ fn main() -> Result<()> {
             sort,
             reverse,
             interactive,
+            version,
+            no_version,
+            changelog,
         } => commands::list(
             status.as_deref(),
             priority.as_deref(),
@@ -46,6 +58,9 @@ fn main() -> Result<()> {
             &sort,
             reverse,
             interactive,
+            version.as_deref(),
+            no_version,
+            changelog.as_deref(),
         ),
         Commands::Show { id } => {
             let id = resolve_bug_id(id)?;
@@ -57,6 +72,9 @@ fn main() -> Result<()> {
             body,
             priority,
             status,
+            changelog,
+            version,
+            remove_version,
         } => {
             let id = resolve_bug_id(id)?;
             commands::update(
@@ -65,6 +83,9 @@ fn main() -> Result<()> {
                 body.as_deref(),
                 priority.as_deref(),
                 status.as_deref(),
+                changelog.as_deref(),
+                version.as_deref(),
+                remove_version.as_deref(),
             )
         }
         Commands::Approve { id } => commands::approve(&id),
@@ -93,5 +114,10 @@ fn main() -> Result<()> {
         } => commands::sync(id.as_deref(), no_push, no_fetch, no_rebase, dry_run),
         Commands::Completions { shell } => commands::completions(&shell),
         Commands::Ready { count, work } => commands::ready(count, work),
+        Commands::Changelog {
+            version,
+            preview,
+            file,
+        } => commands::changelog(&version, preview, file.as_deref()),
     }
 }

@@ -3,10 +3,11 @@ use colored::Colorize;
 use dialoguer::console::{Key, Term};
 use std::cmp::Ordering;
 
-use crate::bug::{Bug, Priority, SortBy, Status};
+use crate::bug::{Bug, ChangelogType, Priority, SortBy, Status};
 use crate::commands::{approve, show, work};
 use crate::store::Store;
 
+#[allow(clippy::too_many_arguments)]
 pub fn list(
     status_filter: Option<&str>,
     priority_filter: Option<&str>,
@@ -14,6 +15,9 @@ pub fn list(
     sort_by: &str,
     reverse: bool,
     interactive: bool,
+    version_filter: Option<&str>,
+    no_version: bool,
+    changelog_filter: Option<&str>,
 ) -> Result<()> {
     // Parse sort field early to catch invalid input
     let sort_by: SortBy = sort_by.parse().context("invalid sort field")?;
@@ -29,6 +33,7 @@ pub fn list(
     // Parse filters
     let status_filter: Option<Status> = status_filter.and_then(|s| s.parse().ok());
     let priority_filter: Option<Priority> = priority_filter.and_then(|p| p.parse().ok());
+    let changelog_filter: Option<ChangelogType> = changelog_filter.and_then(|c| c.parse().ok());
 
     // Filter bugs
     let mut filtered: Vec<_> = bugs
@@ -50,6 +55,30 @@ pub fn list(
             if let Some(ref filter) = priority_filter {
                 if std::mem::discriminant(bug.priority()) != std::mem::discriminant(filter) {
                     return false;
+                }
+            }
+
+            // Apply version filter
+            if let Some(ver) = version_filter {
+                if !bug.has_version(ver) {
+                    return false;
+                }
+            }
+
+            // Apply no-version filter (show only bugs without any versions)
+            if no_version && !bug.versions().is_empty() {
+                return false;
+            }
+
+            // Apply changelog type filter
+            if let Some(ref filter) = changelog_filter {
+                match bug.changelog_type() {
+                    Some(ct) => {
+                        if std::mem::discriminant(ct) != std::mem::discriminant(filter) {
+                            return false;
+                        }
+                    }
+                    None => return false,
                 }
             }
 

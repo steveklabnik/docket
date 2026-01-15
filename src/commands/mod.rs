@@ -1,3 +1,4 @@
+pub mod changelog;
 pub mod cleanup;
 pub mod completions;
 pub mod current;
@@ -13,6 +14,7 @@ pub mod sync;
 pub mod update;
 pub mod work;
 
+pub use changelog::changelog;
 pub use cleanup::cleanup;
 pub use completions::completions;
 pub use current::current;

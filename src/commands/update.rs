@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::fs;
 use std::io::{self, Read};
 
-use crate::bug::{Priority, Status};
+use crate::bug::{ChangelogType, Priority, Status};
 use crate::event::Event;
 use crate::store::Store;
 
@@ -46,12 +46,16 @@ fn validate_status_transition(from: &Status, to: &Status) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update(
     id: &str,
     title: Option<String>,
     body_source: Option<&str>,
     priority_str: Option<&str>,
     status_str: Option<&str>,
+    changelog_type_str: Option<&str>,
+    version: Option<&str>,
+    remove_version: Option<&str>,
 ) -> Result<()> {
     let store = Store::open()?;
     let bug = store.get_bug(id)?;
@@ -83,10 +87,28 @@ pub fn update(
         None => None,
     };
 
+    // Parse changelog type if provided
+    let changelog_type: Option<ChangelogType> = match changelog_type_str {
+        Some(ct) => Some(ct.parse().map_err(|_| {
+            anyhow!(
+                "invalid changelog type '{}'. Valid options: feature, fix, change, deprecated, removed, security, internal",
+                ct
+            )
+        })?),
+        None => None,
+    };
+
     // Check if there's anything to update
-    if title.is_none() && body.is_none() && priority.is_none() && status.is_none() {
+    if title.is_none()
+        && body.is_none()
+        && priority.is_none()
+        && status.is_none()
+        && changelog_type.is_none()
+        && version.is_none()
+        && remove_version.is_none()
+    {
         println!(
-            "{} Nothing to update. Provide --title, --body, --priority, or --status.",
+            "{} Nothing to update. Provide --title, --body, --priority, --status, --changelog, --version, or --remove-version.",
             "!".yellow()
         );
         return Ok(());
@@ -122,6 +144,44 @@ pub fn update(
         }
     }
 
+    // Changelog type changes
+    if let Some(new_changelog_type) = changelog_type {
+        // Check if changelog type actually changed
+        let changed = match &bug.metadata.changelog_type {
+            Some(existing) => *existing != new_changelog_type,
+            None => true,
+        };
+        if changed {
+            let event = Event::changelog_type_set(bug_id.clone(), new_changelog_type);
+            store.append_event(&event)?;
+        }
+    }
+
+    // Version additions
+    if let Some(ver) = version {
+        // Check if version already exists
+        if !bug.metadata.versions.contains(&ver.to_string()) {
+            let event = Event::version_added(bug_id.clone(), ver.to_string());
+            store.append_event(&event)?;
+        }
+    }
+
+    // Version removals
+    if let Some(ver) = remove_version {
+        // Check if version exists to remove
+        if bug.metadata.versions.contains(&ver.to_string()) {
+            let event = Event::version_removed(bug_id.clone(), ver.to_string());
+            store.append_event(&event)?;
+        } else {
+            println!(
+                "{} Version '{}' not found on bug {}",
+                "!".yellow(),
+                ver,
+                bug_id
+            );
+        }
+    }
+
     // Build summary of changes
     let mut changes = Vec::new();
     if title.is_some() {
@@ -135,6 +195,15 @@ pub fn update(
     }
     if status_str.is_some() {
         changes.push("status");
+    }
+    if changelog_type_str.is_some() {
+        changes.push("changelog");
+    }
+    if version.is_some() {
+        changes.push("version added");
+    }
+    if remove_version.is_some() {
+        changes.push("version removed");
     }
 
     println!(

@@ -92,6 +92,33 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    Change: {}", change_id.cyan());
             }
+            EventData::ChangelogTypeSet { changelog_type } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "changelog_type_set".cyan(),
+                    actor.dimmed()
+                );
+                println!("    Changelog type: {}", changelog_type);
+            }
+            EventData::VersionAdded { version } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "version_added".green(),
+                    actor.dimmed()
+                );
+                println!("    Version: {}", version.cyan());
+            }
+            EventData::VersionRemoved { version } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "version_removed".red(),
+                    actor.dimmed()
+                );
+                println!("    Version: {}", version);
+            }
         }
         println!();
     }

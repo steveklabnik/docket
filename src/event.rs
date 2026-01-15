@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use uuid::Uuid;
 
-use crate::bug::{Bug, BugMetadata, Priority, Status};
+use crate::bug::{Bug, BugMetadata, ChangelogType, Priority, Status};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type", content = "data")]
@@ -33,6 +33,18 @@ pub enum EventData {
     #[serde(rename = "change_linked")]
     ChangeLinked {
         change_id: String,
+    },
+    /// Set the changelog type for a bug
+    ChangelogTypeSet {
+        changelog_type: ChangelogType,
+    },
+    /// Add a version to a bug (can have multiple versions for backports)
+    VersionAdded {
+        version: String,
+    },
+    /// Remove a version from a bug
+    VersionRemoved {
+        version: String,
     },
 }
 
@@ -79,6 +91,18 @@ impl Event {
 
     pub fn priority_changed(bug_id: String, from: Priority, to: Priority) -> Self {
         Self::new(bug_id, EventData::PriorityChanged { from, to })
+    }
+
+    pub fn changelog_type_set(bug_id: String, changelog_type: ChangelogType) -> Self {
+        Self::new(bug_id, EventData::ChangelogTypeSet { changelog_type })
+    }
+
+    pub fn version_added(bug_id: String, version: String) -> Self {
+        Self::new(bug_id, EventData::VersionAdded { version })
+    }
+
+    pub fn version_removed(bug_id: String, version: String) -> Self {
+        Self::new(bug_id, EventData::VersionRemoved { version })
     }
 }
 
@@ -150,6 +174,8 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             status: Status::Draft,
             priority: initial_priority,
             created: created.timestamp,
+            changelog_type: None,
+            versions: Vec::new(),
         },
         body: initial_body,
     };
@@ -176,6 +202,17 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             }
             EventData::ChangeLinked { .. } => {
                 // Deprecated: linked changes are no longer used, ignore
+            }
+            EventData::ChangelogTypeSet { changelog_type } => {
+                bug.metadata.changelog_type = Some(changelog_type.clone());
+            }
+            EventData::VersionAdded { version } => {
+                if !bug.metadata.versions.contains(version) {
+                    bug.metadata.versions.push(version.clone());
+                }
+            }
+            EventData::VersionRemoved { version } => {
+                bug.metadata.versions.retain(|v| v != version);
             }
         }
     }
