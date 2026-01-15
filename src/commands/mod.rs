@@ -7,6 +7,7 @@ pub mod log;
 pub mod new;
 pub mod show;
 pub mod status;
+pub mod sync;
 pub mod update;
 pub mod work;
 
@@ -19,5 +20,6 @@ pub use log::log;
 pub use new::new;
 pub use show::show;
 pub use status::{approve, done};
+pub use sync::sync;
 pub use update::update;
 pub use work::work;

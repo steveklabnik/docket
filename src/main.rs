@@ -134,6 +134,29 @@ enum Commands {
         /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
         id: Option<String>,
     },
+
+    /// Sync workspaces with trunk (fetch, rebase, push)
+    Sync {
+        /// Only sync specific bug ID (prefix match)
+        #[arg(short, long)]
+        id: Option<String>,
+
+        /// Skip pushing after rebase
+        #[arg(long)]
+        no_push: bool,
+
+        /// Skip the initial git fetch
+        #[arg(long)]
+        no_fetch: bool,
+
+        /// Skip rebasing (just fetch and/or push)
+        #[arg(long)]
+        no_rebase: bool,
+
+        /// Show what would be done without doing it
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Resolve bug ID from either explicit argument or current workspace.
@@ -207,5 +230,12 @@ fn main() -> Result<()> {
             let id = resolve_bug_id(id)?;
             commands::edit(&id)
         }
+        Commands::Sync {
+            id,
+            no_push,
+            no_fetch,
+            no_rebase,
+            dry_run,
+        } => commands::sync(id.as_deref(), no_push, no_fetch, no_rebase, dry_run),
     }
 }
