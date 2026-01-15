@@ -436,7 +436,7 @@ fn resolve_conflicts_with_claude(workspace_path: &Path, dry_run: bool) -> Result
 
     println!("    {} Invoking Claude to resolve conflicts...", "→".blue());
 
-    let output = Command::new("claude")
+    let status = Command::new("claude")
         .args([
             "-p",
             RESOLVE_PROMPT,
@@ -446,10 +446,10 @@ fn resolve_conflicts_with_claude(workspace_path: &Path, dry_run: bool) -> Result
             "Bash,Read,Edit,Write",
         ])
         .current_dir(workspace_path)
-        .output();
+        .status();
 
-    match output {
-        Ok(output) if output.status.success() => {
+    match status {
+        Ok(status) if status.success() => {
             // Check if conflicts are actually resolved
             if has_conflicts(workspace_path) {
                 println!("    {} Claude finished but conflicts remain", "!".yellow());
@@ -459,13 +459,8 @@ fn resolve_conflicts_with_claude(workspace_path: &Path, dry_run: bool) -> Result
                 Ok(true)
             }
         }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            println!(
-                "    {} Claude failed to resolve conflicts: {}",
-                "!".yellow(),
-                stderr.trim().dimmed()
-            );
+        Ok(_status) => {
+            println!("    {} Claude failed to resolve conflicts", "!".yellow(),);
             Ok(false)
         }
         Err(e) => {
