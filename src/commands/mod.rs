@@ -1,4 +1,5 @@
 pub mod cleanup;
+pub mod completions;
 pub mod current;
 pub mod edit;
 pub mod init;
@@ -12,6 +13,7 @@ pub mod update;
 pub mod work;
 
 pub use cleanup::cleanup;
+pub use completions::completions;
 pub use current::current;
 pub use edit::edit;
 pub use init::init;

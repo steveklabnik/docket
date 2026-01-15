@@ -105,8 +105,42 @@ This generates a commit message using Claude's `/docket-describe` skill and upda
 | `work`    | Start working on a bug (creates workspace + Claude)   |
 | `log`     | Show event history for a bug                          |
 | `cleanup` | Clean up a workspace after work is complete           |
+| `completions` | Generate shell completions                        |
 
 Run `docket <command> --help` for detailed options.
+
+## Shell Completions
+
+Docket supports tab completion for bash, zsh, and fish shells. This enables completion of command names, options, and bug IDs.
+
+### Bash
+
+```bash
+# Add to ~/.bashrc or generate once:
+docket completions bash > ~/.local/share/bash-completion/completions/docket
+
+# Or source directly:
+eval "$(docket completions bash)"
+```
+
+### Zsh
+
+```bash
+# Add to your fpath (e.g., ~/.zfunc):
+docket completions zsh > ~/.zfunc/_docket
+
+# Make sure ~/.zfunc is in your fpath (add to ~/.zshrc):
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+```
+
+### Fish
+
+```bash
+docket completions fish > ~/.config/fish/completions/docket.fish
+```
+
+After installation, restart your shell or source your config file. You can then use TAB to complete commands, options, and bug IDs.
 
 ## Configuration
 
