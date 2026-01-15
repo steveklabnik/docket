@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::process::Command;
 
 use crate::bug::Status;
+use crate::commands::epic;
 use crate::config::Config;
 use crate::store::Store;
 
@@ -28,7 +29,40 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
 
     // Load config to merge with CLI flags
     let config = Config::load(store.root())?;
-    let bug = store.get_bug(id)?;
+    let mut bug = store.get_bug(id)?;
+
+    // If this is an epic, find the next incomplete step to work on
+    if bug.is_epic() {
+        match epic::next_step(&store, bug.id())? {
+            Some(next) => {
+                println!(
+                    "{} Epic {} - working on next step: {} - {}",
+                    "→".blue(),
+                    bug.id().cyan(),
+                    next.id().cyan(),
+                    next.title()
+                );
+                bug = next;
+            }
+            None => {
+                // Check if there are any children at all
+                let (completed, total) = epic::epic_progress(&store, bug.id())?;
+                if total == 0 {
+                    return Err(anyhow!(
+                        "epic {} has no steps yet. Add steps with:\n  docket new \"Step description\" --epic {}",
+                        bug.id(),
+                        bug.id()
+                    ));
+                } else {
+                    return Err(anyhow!(
+                        "all {} steps of epic {} are already done",
+                        completed,
+                        bug.id()
+                    ));
+                }
+            }
+        }
+    }
 
     // Warn if not approved
     match bug.status() {

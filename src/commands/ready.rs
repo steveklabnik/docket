@@ -4,6 +4,7 @@ use colored::Colorize;
 use std::cmp::Ordering;
 
 use crate::bug::{Bug, Priority, Status};
+use crate::commands::epic;
 use crate::store::Store;
 
 /// Show the highest priority approved bugs ready for work.
@@ -11,15 +12,33 @@ use crate::store::Store;
 /// Filters to only Approved status bugs, then sorts by:
 /// 1. Priority (High > Medium > Low)
 /// 2. Created date (oldest first within same priority)
+///
+/// For epics, shows the next incomplete step if it's approved.
 pub fn ready(count: usize, work: bool) -> Result<()> {
     let store = Store::open()?;
     let bugs = store.list_bugs()?;
 
-    // Filter to only approved bugs
-    let mut approved: Vec<_> = bugs
-        .into_iter()
-        .filter(|bug| matches!(bug.status(), Status::Approved))
-        .collect();
+    // Build list of ready items, handling epics specially
+    let mut approved: Vec<Bug> = Vec::new();
+
+    for bug in bugs {
+        if bug.is_epic() {
+            // For epics, check if the next step is approved
+            if let Ok(Some(next)) = epic::next_step(&store, bug.id()) {
+                if matches!(next.status(), Status::Approved) {
+                    // Include the child step (not the epic itself)
+                    approved.push(next);
+                }
+            }
+        } else if !bug.is_child() {
+            // Regular bugs (not epic children) - include if approved
+            if matches!(bug.status(), Status::Approved) {
+                approved.push(bug);
+            }
+        }
+        // Note: epic children are handled via their parent epic above,
+        // so we don't add them directly here to avoid duplicates
+    }
 
     if approved.is_empty() {
         println!("{}", "No approved bugs ready for work.".dimmed());
@@ -62,25 +81,47 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
         let bug = &to_show[0];
         let age = format_age(bug);
 
+        // Show epic context for child bugs
+        let epic_context = if let Some(parent_id) = bug.parent_epic() {
+            if let Ok(parent) = store.get_bug(parent_id) {
+                let (completed, total) = epic::epic_progress(&store, parent_id).unwrap_or((0, 0));
+                format!(" (step of {} [{}/{}])", parent.title(), completed, total)
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
         println!(
-            "{} {} ({}) - {}",
+            "{} {} ({}) - {}{}",
             "Ready to work:".green(),
             bug.id().cyan(),
             format_priority(bug.priority()),
-            bug.title()
+            bug.title(),
+            epic_context.dimmed()
         );
         println!("  Created {}", age.dimmed());
     } else {
         // Multi-bug list format
         for (i, bug) in to_show.iter().enumerate() {
             let age = format_age_short(bug);
+
+            // Show epic context for child bugs
+            let epic_info = if let Some(parent_id) = bug.parent_epic() {
+                format!(" [{}]", parent_id)
+            } else {
+                String::new()
+            };
+
             println!(
-                "{}. {} ({}) - {} ({})",
+                "{}. {} ({}) - {} ({}){}",
                 (i + 1).to_string().bold(),
                 bug.id().cyan(),
                 format_priority(bug.priority()),
                 bug.title(),
-                age.dimmed()
+                age.dimmed(),
+                epic_info.dimmed()
             );
         }
     }

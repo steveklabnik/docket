@@ -31,6 +31,7 @@ fn main() -> Result<()> {
             changelog,
             version,
             tag,
+            epic,
         } => {
             let interactive = title.is_none();
             commands::new(
@@ -41,6 +42,7 @@ fn main() -> Result<()> {
                 changelog.as_deref(),
                 version.as_deref(),
                 &tag,
+                epic.as_deref(),
             )
         }
         Commands::List {
@@ -142,5 +144,30 @@ fn main() -> Result<()> {
             preview,
             file,
         } => commands::changelog(&version, preview, file.as_deref()),
+        Commands::Epic {
+            id_or_title,
+            priority,
+        } => {
+            // Try to find an existing epic with this ID
+            let store = docket::store::Store::open()?;
+            match store.get_bug(&id_or_title) {
+                Ok(bug) if bug.is_epic() => {
+                    // It's an existing epic, show details
+                    commands::epic_show(&store, &bug)
+                }
+                Ok(_bug) => {
+                    // Found a bug but it's not an epic
+                    Err(anyhow!(
+                        "'{}' is not an epic. Use 'docket show {}' to view it.",
+                        id_or_title,
+                        id_or_title
+                    ))
+                }
+                Err(_) => {
+                    // Not found, treat as title for new epic
+                    commands::epic_create(&id_or_title, &priority)
+                }
+            }
+        }
     }
 }

@@ -6,6 +6,7 @@ use anyhow::{anyhow, Result};
 use colored::Colorize;
 
 use crate::bug::Status;
+use crate::commands::epic;
 use crate::event::Event;
 use crate::store::Store;
 
@@ -225,6 +226,37 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
         format!("{}", old_status).dimmed(),
         format!("{}", Status::Done).green()
     );
+
+    // Check if this was a child of an epic and if all siblings are now done
+    if let Some(parent_epic_id) = bug.parent_epic() {
+        if epic::all_children_done(&store, parent_epic_id)? {
+            // Auto-close the parent epic
+            let parent_epic = store.get_bug(parent_epic_id)?;
+            if !matches!(parent_epic.status(), Status::Done) {
+                let epic_event = Event::status_changed(
+                    parent_epic_id.to_string(),
+                    parent_epic.status().clone(),
+                    Status::Done,
+                );
+                store.append_event(&epic_event)?;
+                println!(
+                    "{} All steps complete - epic {} is now done!",
+                    "✓".green(),
+                    parent_epic_id.cyan()
+                );
+            }
+        } else {
+            // Show progress
+            let (completed, total) = epic::epic_progress(&store, parent_epic_id)?;
+            println!(
+                "{} Epic {} progress: {}/{}",
+                "→".blue(),
+                parent_epic_id.cyan(),
+                completed,
+                total
+            );
+        }
+    }
 
     // Return to original directory if we switched
     if switched_to_workspace {

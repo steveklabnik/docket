@@ -235,6 +235,29 @@ impl Store {
         Err(anyhow!("failed to generate unique ID after 100 attempts"))
     }
 
+    /// Generate the next child ID for an epic (e.g., abc1.1, abc1.2, abc1.3)
+    pub fn generate_child_id(&self, parent_id: &str) -> Result<String> {
+        // Find existing children to determine next number
+        let pattern = self.bugs_dir().join(format!("{}.*.jsonl", parent_id));
+        let pattern_str = pattern
+            .to_str()
+            .ok_or_else(|| anyhow!("invalid path encoding"))?;
+
+        let mut max_num: u32 = 0;
+        for path in glob::glob(pattern_str)?.flatten() {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                // Extract the number after the dot (e.g., "abc1.3" -> 3)
+                if let Some(num_str) = stem.strip_prefix(&format!("{}.", parent_id)) {
+                    if let Ok(num) = num_str.parse::<u32>() {
+                        max_num = max_num.max(num);
+                    }
+                }
+            }
+        }
+
+        Ok(format!("{}.{}", parent_id, max_num + 1))
+    }
+
     /// Get the root .docket directory path
     pub fn root(&self) -> &Path {
         &self.root

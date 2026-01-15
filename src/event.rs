@@ -16,6 +16,12 @@ pub enum EventData {
         title: String,
         priority: Priority,
         body: String,
+        /// If true, this bug is an epic (parent container for ordered steps)
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        is_epic: Option<bool>,
+        /// If set, this bug is a child step of the specified epic
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_epic: Option<String>,
     },
     StatusChanged {
         from: Status,
@@ -86,6 +92,40 @@ impl Event {
                 title,
                 priority,
                 body,
+                is_epic: None,
+                parent_epic: None,
+            },
+        )
+    }
+
+    pub fn epic_created(bug_id: String, title: String, priority: Priority, body: String) -> Self {
+        Self::new(
+            bug_id,
+            EventData::Created {
+                title,
+                priority,
+                body,
+                is_epic: Some(true),
+                parent_epic: None,
+            },
+        )
+    }
+
+    pub fn child_created(
+        bug_id: String,
+        title: String,
+        priority: Priority,
+        body: String,
+        parent_epic: String,
+    ) -> Self {
+        Self::new(
+            bug_id,
+            EventData::Created {
+                title,
+                priority,
+                body,
+                is_epic: None,
+                parent_epic: Some(parent_epic),
             },
         )
     }
@@ -175,14 +215,23 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
         .find(|e| matches!(e.data, EventData::Created { .. }))
         .ok_or_else(|| anyhow!("no Created event found"))?;
 
-    let (initial_title, initial_priority, initial_body) = match &created.data {
-        EventData::Created {
-            title,
-            priority,
-            body,
-        } => (title.clone(), priority.clone(), body.clone()),
-        _ => unreachable!(),
-    };
+    let (initial_title, initial_priority, initial_body, initial_is_epic, initial_parent_epic) =
+        match &created.data {
+            EventData::Created {
+                title,
+                priority,
+                body,
+                is_epic,
+                parent_epic,
+            } => (
+                title.clone(),
+                priority.clone(),
+                body.clone(),
+                *is_epic,
+                parent_epic.clone(),
+            ),
+            _ => unreachable!(),
+        };
 
     let mut bug = Bug {
         metadata: BugMetadata {
@@ -194,6 +243,8 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             changelog_type: None,
             versions: Vec::new(),
             tags: HashSet::new(),
+            is_epic: initial_is_epic,
+            parent_epic: initial_parent_epic,
         },
         body: initial_body,
     };
@@ -273,6 +324,8 @@ mod tests {
                 title: "Test Bug".to_string(),
                 priority: Priority::High,
                 body: "Bug body".to_string(),
+                is_epic: None,
+                parent_epic: None,
             },
             ts(1000),
         )];
@@ -295,6 +348,8 @@ mod tests {
                     title: "Test Bug".to_string(),
                     priority: Priority::Medium,
                     body: "Body".to_string(),
+                    is_epic: None,
+                    parent_epic: None,
                 },
                 ts(1000),
             ),
@@ -330,6 +385,8 @@ mod tests {
                     title: "Original Title".to_string(),
                     priority: Priority::Low,
                     body: "Original body".to_string(),
+                    is_epic: None,
+                    parent_epic: None,
                 },
                 ts(1000),
             ),
@@ -366,6 +423,8 @@ mod tests {
                     title: "Test".to_string(),
                     priority: Priority::Low,
                     body: "Body".to_string(),
+                    is_epic: None,
+                    parent_epic: None,
                 },
                 ts(1000),
             ),
@@ -419,6 +478,8 @@ mod tests {
                     title: "Original".to_string(),
                     priority: Priority::Medium,
                     body: "Body".to_string(),
+                    is_epic: None,
+                    parent_epic: None,
                 },
                 ts(1000),
             ),

@@ -21,6 +21,7 @@ fn read_body_from_source(source: &str) -> Result<String> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn new(
     title: Option<String>,
     priority_str: &str,
@@ -29,8 +30,23 @@ pub fn new(
     changelog_type_str: Option<&str>,
     version: Option<&str>,
     tags: &[String],
+    epic_id: Option<&str>,
 ) -> Result<()> {
     let store = Store::open()?;
+
+    // If creating a child, verify the parent epic exists and is actually an epic
+    let parent_epic = if let Some(epic_ref) = epic_id {
+        let epic = store.get_bug(epic_ref)?;
+        if !epic.is_epic() {
+            anyhow::bail!(
+                "bug '{}' is not an epic. Use 'docket epic \"Title\"' to create an epic first.",
+                epic_ref
+            );
+        }
+        Some(epic)
+    } else {
+        None
+    };
 
     // Get title interactively if not provided
     let title = match title {
@@ -58,8 +74,12 @@ pub fn new(
         })
     };
 
-    // Generate unique ID
-    let id = store.generate_id()?;
+    // Generate ID - child ID if under an epic, otherwise regular ID
+    let id = if let Some(ref epic) = parent_epic {
+        store.generate_child_id(epic.id())?
+    } else {
+        store.generate_id()?
+    };
 
     // Get body from source or use default template
     let body = match body_source {
@@ -82,8 +102,18 @@ pub fn new(
             .to_string(),
     };
 
-    // Emit Created event
-    let event = Event::created(id.clone(), title.clone(), priority, body);
+    // Emit Created event (with parent_epic if applicable)
+    let event = if let Some(ref epic) = parent_epic {
+        Event::child_created(
+            id.clone(),
+            title.clone(),
+            priority,
+            body,
+            epic.id().to_string(),
+        )
+    } else {
+        Event::created(id.clone(), title.clone(), priority, body)
+    };
     store.append_event(&event)?;
 
     // Emit ChangelogTypeSet event if changelog type was provided
@@ -110,17 +140,27 @@ pub fn new(
         store.append_event(&event)?;
     }
 
-    println!("{} Created bug {} - {}", "✓".green(), id.cyan(), title);
-    if !tags.is_empty() {
+    if let Some(epic) = parent_epic {
         println!(
-            "  Tags: {}",
-            tags.iter()
-                .map(|t| t.yellow().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            "{} Created step {} - {} (under epic {})",
+            "✓".green(),
+            id.cyan(),
+            title,
+            epic.id().cyan()
         );
+    } else {
+        println!("{} Created bug {} - {}", "✓".green(), id.cyan(), title);
+        if !tags.is_empty() {
+            println!(
+                "  Tags: {}",
+                tags.iter()
+                    .map(|t| t.yellow().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        println!("  Edit with: {} {}", "docket show".dimmed(), id.dimmed());
     }
-    println!("  Edit with: {} {}", "docket show".dimmed(), id.dimmed());
 
     Ok(())
 }

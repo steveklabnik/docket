@@ -4,7 +4,7 @@ use dialoguer::console::{Key, Term};
 use std::cmp::Ordering;
 
 use crate::bug::{Bug, ChangelogType, Priority, SortBy, Status};
-use crate::commands::{approve, show, work};
+use crate::commands::{approve, epic, show, work};
 use crate::store::Store;
 
 #[allow(clippy::too_many_arguments)]
@@ -40,6 +40,11 @@ pub fn list(
     let mut filtered: Vec<_> = bugs
         .into_iter()
         .filter(|bug| {
+            // Hide child bugs from the main list (they're shown under their epic)
+            if bug.is_child() {
+                return false;
+            }
+
             // By default, hide terminal states (done, not-planned) unless --all is specified
             if !show_all && matches!(bug.status(), Status::Done | Status::NotPlanned) {
                 return false;
@@ -137,14 +142,39 @@ fn print_bug_list(store: &Store, bugs: &[Bug]) {
 }
 
 fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
-    let status_str = format!("{}", bug.status());
-    let status_colored = match bug.status() {
-        Status::Draft => status_str.dimmed(),
-        Status::Approved => status_str.green(),
-        Status::InProgress => status_str.yellow(),
-        Status::Review => status_str.magenta(),
-        Status::Done => status_str.blue(),
-        Status::NotPlanned => status_str.red(),
+    // For epics, show progress instead of status
+    let status_str = if bug.is_epic() {
+        match epic::epic_progress(store, bug.id()) {
+            Ok((completed, total)) if total > 0 => format!("[{}/{}]", completed, total),
+            _ => format!("{}", bug.status()),
+        }
+    } else {
+        format!("{}", bug.status())
+    };
+
+    let status_colored = if bug.is_epic() {
+        // Progress indicator styling
+        if status_str.starts_with('[') {
+            status_str.magenta()
+        } else {
+            match bug.status() {
+                Status::Draft => status_str.dimmed(),
+                Status::Approved => status_str.green(),
+                Status::InProgress => status_str.yellow(),
+                Status::Review => status_str.magenta(),
+                Status::Done => status_str.blue(),
+                Status::NotPlanned => status_str.red(),
+            }
+        }
+    } else {
+        match bug.status() {
+            Status::Draft => status_str.dimmed(),
+            Status::Approved => status_str.green(),
+            Status::InProgress => status_str.yellow(),
+            Status::Review => status_str.magenta(),
+            Status::Done => status_str.blue(),
+            Status::NotPlanned => status_str.red(),
+        }
     };
 
     let priority_str = format!("{}", bug.priority());

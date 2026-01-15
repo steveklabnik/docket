@@ -65,6 +65,10 @@ pub enum Commands {
         /// Tags to assign to this bug (can be used multiple times)
         #[arg(long)]
         tag: Vec<String>,
+
+        /// Create as a child step of an epic
+        #[arg(short, long, add = ArgValueCompleter::new(complete_bug_id))]
+        epic: Option<String>,
     },
 
     /// List all bugs
@@ -307,5 +311,19 @@ pub enum Commands {
         /// Custom file to write to (default: CHANGELOG.md)
         #[arg(short, long)]
         file: Option<String>,
+    },
+
+    /// Create an epic or show epic details
+    ///
+    /// If the argument matches an existing epic ID, shows the epic detail with step progress.
+    /// Otherwise, creates a new epic with the argument as the title.
+    Epic {
+        /// Epic ID to show, or title for new epic
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id_or_title: String,
+
+        /// Priority level (only used when creating)
+        #[arg(short, long, default_value = "medium")]
+        priority: String,
     },
 }

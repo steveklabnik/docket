@@ -256,6 +256,12 @@ pub struct BugMetadata {
     pub versions: Vec<String>,
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub tags: HashSet<String>,
+    /// If true, this bug is an epic (parent container for ordered steps)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_epic: Option<bool>,
+    /// If set, this bug is a child step of the specified epic
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_epic: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -321,6 +327,21 @@ impl Bug {
 
     pub fn has_tag(&self, tag: &str) -> bool {
         self.metadata.tags.contains(tag)
+    }
+
+    /// Returns true if this bug is an epic
+    pub fn is_epic(&self) -> bool {
+        self.metadata.is_epic.unwrap_or(false)
+    }
+
+    /// Returns the parent epic ID if this is a child bug
+    pub fn parent_epic(&self) -> Option<&str> {
+        self.metadata.parent_epic.as_deref()
+    }
+
+    /// Returns true if this is a child of an epic
+    pub fn is_child(&self) -> bool {
+        self.metadata.parent_epic.is_some()
     }
 }
 
