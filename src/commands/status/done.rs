@@ -11,6 +11,43 @@ use crate::store::Store;
 
 use super::jj;
 
+/// Result of parsing checkboxes from bug body
+#[derive(Debug, PartialEq)]
+pub struct CheckboxStatus {
+    pub checked: usize,
+    pub unchecked: usize,
+}
+
+impl CheckboxStatus {
+    /// Returns true if all checkboxes are checked (and there is at least one)
+    pub fn all_checked(&self) -> bool {
+        self.unchecked == 0 && self.checked > 0
+    }
+
+    /// Returns true if there are no checkboxes at all
+    pub fn has_no_checkboxes(&self) -> bool {
+        self.checked == 0 && self.unchecked == 0
+    }
+}
+
+/// Parse checkbox markers from a bug body.
+/// Looks for `- [ ]` (unchecked) and `- [x]` or `- [X]` (checked) patterns.
+pub fn parse_checkboxes(body: &str) -> CheckboxStatus {
+    let mut checked = 0;
+    let mut unchecked = 0;
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("- [ ]") {
+            unchecked += 1;
+        } else if trimmed.starts_with("- [x]") || trimmed.starts_with("- [X]") {
+            checked += 1;
+        }
+    }
+
+    CheckboxStatus { checked, unchecked }
+}
+
 /// Extract content from between `<commit>` tags in Claude's output.
 /// Falls back to the full text if tags aren't found.
 fn extract_commit_message(output: &str) -> String {
@@ -86,7 +123,11 @@ fn fallback_commit_message(bug_title: &str, bug_id: &str) -> String {
 }
 
 /// Mark a bug as done, handling workspace integration if applicable.
-pub fn done(id: &str) -> Result<()> {
+///
+/// If `auto` is true, validates that all acceptance criteria checkboxes are checked
+/// before marking the bug as done. If `force` is true along with `auto`, marks
+/// the bug as done even if unchecked criteria remain.
+pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
     let store = Store::open()?;
     let bug = store.get_bug(id)?;
 
@@ -101,6 +142,37 @@ pub fn done(id: &str) -> Result<()> {
             bug_id,
             bug_id
         ));
+    }
+
+    // If --auto is set, validate that all checkboxes are checked
+    if auto {
+        let checkbox_status = parse_checkboxes(&bug.body);
+
+        if checkbox_status.has_no_checkboxes() {
+            return Err(anyhow!(
+                "cannot use --auto: bug '{}' has no acceptance criteria checkboxes.\n\
+                 Add checkboxes to the bug body using `- [ ]` format, or omit --auto.",
+                bug_id
+            ));
+        }
+
+        if !checkbox_status.all_checked() {
+            if force {
+                println!(
+                    "{} Forcing completion with {} unchecked criteria",
+                    "!".yellow(),
+                    checkbox_status.unchecked
+                );
+            } else {
+                return Err(anyhow!(
+                    "cannot mark bug '{}' as done: {} of {} acceptance criteria are unchecked.\n\
+                     Check all criteria with `- [x]` or use --force to override.",
+                    bug_id,
+                    checkbox_status.unchecked,
+                    checkbox_status.checked + checkbox_status.unchecked
+                ));
+            }
+        }
     }
 
     // Track if we switched directories (so we can switch back)
@@ -206,5 +278,114 @@ Let me know if you need changes!"#;
         let output = "<commit></commit>";
         let result = extract_commit_message(output);
         assert_eq!(result, "");
+    }
+
+    #[test]
+    fn parse_checkboxes_all_checked() {
+        let body = r#"## Acceptance Criteria
+
+- [x] First criterion
+- [x] Second criterion
+- [x] Third criterion
+"#;
+        let status = parse_checkboxes(body);
+        assert_eq!(status.checked, 3);
+        assert_eq!(status.unchecked, 0);
+        assert!(status.all_checked());
+    }
+
+    #[test]
+    fn parse_checkboxes_all_unchecked() {
+        let body = r#"## Acceptance Criteria
+
+- [ ] First criterion
+- [ ] Second criterion
+"#;
+        let status = parse_checkboxes(body);
+        assert_eq!(status.checked, 0);
+        assert_eq!(status.unchecked, 2);
+        assert!(!status.all_checked());
+    }
+
+    #[test]
+    fn parse_checkboxes_mixed() {
+        let body = r#"## Acceptance Criteria
+
+- [x] Completed item
+- [ ] Pending item
+- [X] Another completed (uppercase X)
+- [ ] Another pending
+"#;
+        let status = parse_checkboxes(body);
+        assert_eq!(status.checked, 2);
+        assert_eq!(status.unchecked, 2);
+        assert!(!status.all_checked());
+    }
+
+    #[test]
+    fn parse_checkboxes_none() {
+        let body = r#"## Goal
+
+Just some text without checkboxes.
+
+## Context
+
+More text here.
+"#;
+        let status = parse_checkboxes(body);
+        assert_eq!(status.checked, 0);
+        assert_eq!(status.unchecked, 0);
+        assert!(status.has_no_checkboxes());
+        assert!(!status.all_checked()); // all_checked requires at least one checkbox
+    }
+
+    #[test]
+    fn parse_checkboxes_with_indentation() {
+        let body = r#"## Acceptance Criteria
+
+  - [x] Indented checked
+    - [ ] More indented unchecked
+"#;
+        let status = parse_checkboxes(body);
+        assert_eq!(status.checked, 1);
+        assert_eq!(status.unchecked, 1);
+    }
+
+    #[test]
+    fn parse_checkboxes_ignores_non_checkbox_lists() {
+        let body = r#"## Notes
+
+- Regular list item
+- Another regular item
+- [x] This is a checkbox
+- [not a checkbox]
+"#;
+        let status = parse_checkboxes(body);
+        assert_eq!(status.checked, 1);
+        assert_eq!(status.unchecked, 0);
+    }
+
+    #[test]
+    fn checkbox_status_methods() {
+        let all_checked = CheckboxStatus {
+            checked: 3,
+            unchecked: 0,
+        };
+        assert!(all_checked.all_checked());
+        assert!(!all_checked.has_no_checkboxes());
+
+        let none = CheckboxStatus {
+            checked: 0,
+            unchecked: 0,
+        };
+        assert!(!none.all_checked());
+        assert!(none.has_no_checkboxes());
+
+        let some_unchecked = CheckboxStatus {
+            checked: 2,
+            unchecked: 1,
+        };
+        assert!(!some_unchecked.all_checked());
+        assert!(!some_unchecked.has_no_checkboxes());
     }
 }

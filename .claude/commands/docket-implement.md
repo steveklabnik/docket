@@ -30,12 +30,18 @@ You are helping implement a bug tracked by docket. Read the current bug context 
    - Format log entries as: `- YYYY-MM-DD: Description of progress`
    - Check off acceptance criteria by changing `- [ ]` to `- [x]`
 
-5. **Set changelog type** after completing work:
+6. **Set changelog type** after completing work:
    - Check if the bug already has a changelog type set (shown in `cargo run -- show`)
    - If not set, ask the user: "What type of change is this for the changelog?"
    - Options: feature, fix, change, deprecated, removed, security, internal
    - Set it via: `cargo run -- update $DOCKET_BUG --changelog TYPE`
    - Use `internal` for changes that shouldn't appear in public changelogs
+
+7. **Mark the bug as done** when all acceptance criteria are complete:
+   - Use `cargo run -- done $DOCKET_BUG --auto` to mark the bug as done
+   - The `--auto` flag verifies that all acceptance criteria checkboxes (`- [x]`) are checked
+   - If any criteria remain unchecked, the command will fail with a helpful message
+   - Use `--force` with `--auto` to override if you need to mark done despite unchecked criteria
 
 ## Changelog Type Guide
 

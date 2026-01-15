@@ -89,9 +89,9 @@ fn main() -> Result<()> {
             )
         }
         Commands::Approve { id } => commands::approve(&id),
-        Commands::Done { id } => {
+        Commands::Done { id, auto, force } => {
             let id = resolve_bug_id(id)?;
-            commands::done(&id)
+            commands::done(&id, auto, force)
         }
         Commands::Work {
             id,

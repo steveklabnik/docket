@@ -156,6 +156,14 @@ pub enum Commands {
         /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
         #[arg(add = ArgValueCompleter::new(complete_bug_id))]
         id: Option<String>,
+
+        /// Only mark done if all acceptance criteria checkboxes are checked
+        #[arg(long)]
+        auto: bool,
+
+        /// Force marking done even if unchecked criteria remain (only with --auto)
+        #[arg(long)]
+        force: bool,
     },
 
     /// Start working on a bug (creates workspace + runs Claude)

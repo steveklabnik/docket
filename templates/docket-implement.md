@@ -25,6 +25,12 @@ You are helping implement a bug tracked by docket. Read the current bug context 
    - Format log entries as: `- YYYY-MM-DD: Description of progress`
    - Check off acceptance criteria by changing `- [ ]` to `- [x]`
 
+5. **Mark the bug as done** when all acceptance criteria are complete:
+   - Use `docket done $DOCKET_BUG --auto` to mark the bug as done
+   - The `--auto` flag verifies that all acceptance criteria checkboxes (`- [x]`) are checked
+   - If any criteria remain unchecked, the command will fail with a helpful message
+   - Use `--force` with `--auto` to override if you need to mark done despite unchecked criteria
+
 ## Getting Started
 
 Begin by running `docket show $DOCKET_BUG` and presenting a summary of the bug to the user, then propose an implementation plan.
