@@ -12,6 +12,7 @@ pub fn list(
     status_filter: Option<&str>,
     priority_filter: Option<&str>,
     show_all: bool,
+    show_paused: bool,
     sort_by: &str,
     reverse: bool,
     interactive: bool,
@@ -63,6 +64,11 @@ pub fn list(
 
             // By default, hide terminal states (done, not-planned) unless --all is specified
             if !show_all && matches!(bug.status(), Status::Done | Status::NotPlanned) {
+                return false;
+            }
+
+            // By default, hide paused bugs unless --paused or --all is specified
+            if !show_all && !show_paused && matches!(bug.status(), Status::Paused) {
                 return false;
             }
 
@@ -190,6 +196,7 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
                 Status::Approved => status_str.green(),
                 Status::InProgress => status_str.yellow(),
                 Status::Blocked => status_str.red().bold(),
+                Status::Paused => status_str.cyan(),
                 Status::Review => status_str.magenta(),
                 Status::Done => status_str.blue(),
                 Status::NotPlanned => status_str.red(),
@@ -201,6 +208,7 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
             Status::Approved => status_str.green(),
             Status::InProgress => status_str.yellow(),
             Status::Blocked => status_str.red().bold(),
+            Status::Paused => status_str.cyan(),
             Status::Review => status_str.magenta(),
             Status::Done => status_str.blue(),
             Status::NotPlanned => status_str.red(),

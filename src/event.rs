@@ -35,6 +35,14 @@ pub enum EventData {
     },
     /// Bug unblocked and back to in progress
     Unblocked,
+    /// Bug paused (intentionally set aside)
+    Paused {
+        from: Status,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+    /// Bug resumed from paused state
+    Resumed,
     Updated {
         title: Option<String>,
         body: Option<String>,
@@ -188,6 +196,14 @@ impl Event {
         Self::new(bug_id, EventData::Unblocked)
     }
 
+    pub fn paused(bug_id: String, from: Status, reason: Option<String>) -> Self {
+        Self::new(bug_id, EventData::Paused { from, reason })
+    }
+
+    pub fn resumed(bug_id: String) -> Self {
+        Self::new(bug_id, EventData::Resumed)
+    }
+
     pub fn dependency_added(bug_id: String, blocked_by: String) -> Self {
         Self::new(bug_id, EventData::DependencyAdded { blocked_by })
     }
@@ -280,6 +296,7 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             is_epic: initial_is_epic,
             parent_epic: initial_parent_epic,
             blocked_reason: None,
+            paused_reason: None,
             blocked_by: HashSet::new(),
         },
         body: initial_body,
@@ -332,6 +349,14 @@ pub fn derive_bug(events: &[Event]) -> Result<Bug> {
             EventData::Unblocked => {
                 bug.metadata.status = Status::InProgress;
                 bug.metadata.blocked_reason = None;
+            }
+            EventData::Paused { reason, .. } => {
+                bug.metadata.status = Status::Paused;
+                bug.metadata.paused_reason = reason.clone();
+            }
+            EventData::Resumed => {
+                bug.metadata.status = Status::InProgress;
+                bug.metadata.paused_reason = None;
             }
             EventData::DependencyAdded { blocked_by } => {
                 bug.metadata.blocked_by.insert(blocked_by.clone());

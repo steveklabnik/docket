@@ -53,6 +53,7 @@ fn main() -> Result<()> {
             all,
             review,
             blocked,
+            paused,
             sort,
             reverse,
             interactive,
@@ -75,6 +76,7 @@ fn main() -> Result<()> {
                 status_filter.as_deref(),
                 priority.as_deref(),
                 all,
+                paused,
                 &sort,
                 reverse,
                 interactive,
@@ -122,6 +124,14 @@ fn main() -> Result<()> {
         Commands::Unblock { id, by } => {
             let id = resolve_bug_id(id)?;
             commands::unblock(&id, by)
+        }
+        Commands::Pause { id, reason } => {
+            let id = resolve_bug_id(id)?;
+            commands::pause(&id, reason)
+        }
+        Commands::Resume { id } => {
+            let id = resolve_bug_id(id)?;
+            commands::resume(&id)
         }
         Commands::Review { id } => {
             let id = resolve_bug_id(id)?;

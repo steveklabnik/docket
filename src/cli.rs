@@ -97,6 +97,10 @@ pub enum Commands {
         #[arg(long)]
         blocked: bool,
 
+        /// Show paused bugs (hidden by default like done bugs)
+        #[arg(long)]
+        paused: bool,
+
         /// Sort by field (priority, created, status)
         #[arg(long, default_value = "priority")]
         sort: String,
@@ -227,6 +231,24 @@ pub enum Commands {
         /// Bug ID to remove as a blocker (inter-bug dependency)
         #[arg(long, add = ArgValueCompleter::new(complete_bug_id))]
         by: Option<String>,
+    },
+
+    /// Pause a bug (intentionally set work aside)
+    Pause {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: Option<String>,
+
+        /// Reason for pausing (e.g., "switching to higher priority work")
+        #[arg(short, long)]
+        reason: Option<String>,
+    },
+
+    /// Resume work on a paused bug
+    Resume {
+        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: Option<String>,
     },
 
     /// Submit a bug for code review (uses current workspace bug if no ID provided)

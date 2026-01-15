@@ -169,7 +169,8 @@ fn find_workspaces_to_sync(
                 | Status::Approved
                 | Status::Draft
                 | Status::Review
-                | Status::Blocked => {
+                | Status::Blocked
+                | Status::Paused => {
                     workspaces.push(WorkspaceInfo {
                         name: name.clone(),
                         path: entry.path(),

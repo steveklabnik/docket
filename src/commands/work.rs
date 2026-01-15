@@ -125,6 +125,17 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
                 eprintln!("  {} {}", "Reason:".dimmed(), reason);
             }
         }
+        Status::Paused => {
+            eprintln!(
+                "{} Bug {} is paused. Use 'docket resume {}' to resume work.",
+                "!".yellow(),
+                bug.id().cyan(),
+                bug.id()
+            );
+            if let Some(reason) = bug.paused_reason() {
+                eprintln!("  {} {}", "Reason:".dimmed(), reason);
+            }
+        }
         Status::Review => {
             eprintln!(
                 "{} Bug {} is in review. Use 'docket reject {}' to return to in-progress first.",

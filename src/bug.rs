@@ -14,6 +14,7 @@ pub enum Status {
     Approved,
     InProgress,
     Blocked,
+    Paused,
     Review,
     Done,
     NotPlanned,
@@ -27,8 +28,9 @@ impl Status {
             Status::InProgress => 2, // Active work
             Status::Approved => 3,   // Ready to work
             Status::Draft => 4,      // Needs approval
-            Status::Done => 5,       // Completed
-            Status::NotPlanned => 6, // Won't do
+            Status::Paused => 5,     // Intentionally set aside
+            Status::Done => 6,       // Completed
+            Status::NotPlanned => 7, // Won't do
         }
     }
 }
@@ -52,6 +54,7 @@ impl fmt::Display for Status {
             Status::Approved => write!(f, "approved"),
             Status::InProgress => write!(f, "in-progress"),
             Status::Blocked => write!(f, "blocked"),
+            Status::Paused => write!(f, "paused"),
             Status::Review => write!(f, "review"),
             Status::Done => write!(f, "done"),
             Status::NotPlanned => write!(f, "not-planned"),
@@ -68,6 +71,7 @@ impl FromStr for Status {
             "approved" => Ok(Status::Approved),
             "in-progress" | "in_progress" | "inprogress" => Ok(Status::InProgress),
             "blocked" => Ok(Status::Blocked),
+            "paused" => Ok(Status::Paused),
             "review" => Ok(Status::Review),
             "done" => Ok(Status::Done),
             "not-planned" | "not_planned" | "notplanned" => Ok(Status::NotPlanned),
@@ -269,6 +273,9 @@ pub struct BugMetadata {
     /// If blocked, the reason why (optional)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
+    /// If paused, the reason why (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused_reason: Option<String>,
     /// Bug IDs that this bug is blocked by (inter-bug dependencies)
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub blocked_by: HashSet<String>,
@@ -357,6 +364,11 @@ impl Bug {
     /// Returns the blocked reason if set
     pub fn blocked_reason(&self) -> Option<&str> {
         self.metadata.blocked_reason.as_deref()
+    }
+
+    /// Returns the paused reason if set
+    pub fn paused_reason(&self) -> Option<&str> {
+        self.metadata.paused_reason.as_deref()
     }
 
     /// Returns the set of bug IDs that this bug is blocked by
@@ -463,9 +475,22 @@ mod tests {
         assert_eq!(Status::Approved.to_string(), "approved");
         assert_eq!(Status::InProgress.to_string(), "in-progress");
         assert_eq!(Status::Blocked.to_string(), "blocked");
+        assert_eq!(Status::Paused.to_string(), "paused");
         assert_eq!(Status::Review.to_string(), "review");
         assert_eq!(Status::Done.to_string(), "done");
         assert_eq!(Status::NotPlanned.to_string(), "not-planned");
+    }
+
+    #[test]
+    fn status_from_str_paused() {
+        assert!(matches!(
+            Status::from_str("paused").unwrap(),
+            Status::Paused
+        ));
+        assert!(matches!(
+            Status::from_str("PAUSED").unwrap(),
+            Status::Paused
+        ));
     }
 
     #[test]
@@ -597,7 +622,8 @@ Body"#;
         assert!(Status::Blocked < Status::InProgress);
         assert!(Status::InProgress < Status::Approved);
         assert!(Status::Approved < Status::Draft);
-        assert!(Status::Draft < Status::Done);
+        assert!(Status::Draft < Status::Paused);
+        assert!(Status::Paused < Status::Done);
         assert!(Status::Done < Status::NotPlanned);
     }
 
@@ -611,6 +637,7 @@ Body"#;
             Status::Approved,
             Status::Review,
             Status::Blocked,
+            Status::Paused,
         ];
         statuses.sort();
         assert_eq!(
@@ -621,6 +648,7 @@ Body"#;
                 Status::InProgress,
                 Status::Approved,
                 Status::Draft,
+                Status::Paused,
                 Status::Done,
                 Status::NotPlanned,
             ]

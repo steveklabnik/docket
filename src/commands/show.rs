@@ -20,6 +20,7 @@ pub fn show(id: &str) -> Result<()> {
         Status::Approved => status_str.green(),
         Status::InProgress => status_str.yellow(),
         Status::Blocked => status_str.red().bold(),
+        Status::Paused => status_str.cyan(),
         Status::Review => status_str.magenta(),
         Status::Done => status_str.blue(),
         Status::NotPlanned => status_str.red(),
@@ -30,6 +31,11 @@ pub fn show(id: &str) -> Result<()> {
     // Show blocked reason if blocked
     if let Some(reason) = bug.blocked_reason() {
         println!("{:12} {}", "Blocked:".dimmed(), reason.red());
+    }
+
+    // Show paused reason if paused
+    if let Some(reason) = bug.paused_reason() {
+        println!("{:12} {}", "Paused:".dimmed(), reason.cyan());
     }
 
     println!("{:12} {}", "Priority:".dimmed(), bug.priority());

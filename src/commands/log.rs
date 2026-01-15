@@ -180,6 +180,31 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    Unblocked from: {}", blocked_by.cyan());
             }
+            EventData::Paused { from, reason } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "paused".cyan(),
+                    actor.dimmed()
+                );
+                println!(
+                    "    {} -> {}",
+                    format!("{}", from).dimmed(),
+                    "paused".cyan()
+                );
+                if let Some(r) = reason {
+                    println!("    Reason: {}", r);
+                }
+            }
+            EventData::Resumed => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "resumed".green(),
+                    actor.dimmed()
+                );
+                println!("    {} -> {}", "paused".cyan(), "in-progress".yellow());
+            }
         }
         println!();
     }
