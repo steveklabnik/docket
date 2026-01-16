@@ -114,7 +114,11 @@ pub fn update(
         return Ok(());
     }
 
-    // Validate and apply status change if requested
+    // Start a transaction for atomic multi-event writes
+    let mut tx = store.begin_transaction(&bug_id)?;
+    let mut version_not_found = false;
+
+    // Validate and add status change event if requested
     if let Some(ref new_status) = status {
         // Check if status actually changed
         if std::mem::discriminant(new_status) != std::mem::discriminant(&bug.metadata.status) {
@@ -124,14 +128,14 @@ pub fn update(
                 bug.metadata.status.clone(),
                 new_status.clone(),
             );
-            store.append_event(&event)?;
+            tx.add_event(event);
         }
     }
 
-    // Emit Updated event for title/body changes
+    // Add Updated event for title/body changes
     if title.is_some() || body.is_some() {
         let event = Event::updated(bug_id.clone(), title.clone(), body);
-        store.append_event(&event)?;
+        tx.add_event(event);
     }
 
     // Priority changes
@@ -140,7 +144,7 @@ pub fn update(
         if new_priority != bug.metadata.priority {
             let event =
                 Event::priority_changed(bug_id.clone(), bug.metadata.priority, new_priority);
-            store.append_event(&event)?;
+            tx.add_event(event);
         }
     }
 
@@ -153,7 +157,7 @@ pub fn update(
         };
         if changed {
             let event = Event::changelog_type_set(bug_id.clone(), new_changelog_type);
-            store.append_event(&event)?;
+            tx.add_event(event);
         }
     }
 
@@ -162,7 +166,7 @@ pub fn update(
         // Check if version already exists
         if !bug.metadata.versions.contains(&ver.to_string()) {
             let event = Event::version_added(bug_id.clone(), ver.to_string());
-            store.append_event(&event)?;
+            tx.add_event(event);
         }
     }
 
@@ -171,8 +175,18 @@ pub fn update(
         // Check if version exists to remove
         if bug.metadata.versions.contains(&ver.to_string()) {
             let event = Event::version_removed(bug_id.clone(), ver.to_string());
-            store.append_event(&event)?;
+            tx.add_event(event);
         } else {
+            version_not_found = true;
+        }
+    }
+
+    // Commit all events atomically
+    tx.commit()?;
+
+    // Print warning about version not found after commit
+    if version_not_found {
+        if let Some(ver) = remove_version {
             println!(
                 "{} Version '{}' not found on bug {}",
                 "!".yellow(),
@@ -202,7 +216,7 @@ pub fn update(
     if version.is_some() {
         changes.push("version added");
     }
-    if remove_version.is_some() {
+    if remove_version.is_some() && !version_not_found {
         changes.push("version removed");
     }
 

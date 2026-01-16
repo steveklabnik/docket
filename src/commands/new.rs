@@ -108,7 +108,10 @@ pub fn new(
         template::substitute_variables(&template_content, &ctx)
     };
 
-    // Emit Created event (with parent_epic if applicable)
+    // Start a transaction for atomic multi-event writes
+    let mut tx = store.begin_transaction(&id)?;
+
+    // Add Created event (with parent_epic if applicable)
     let event = if let Some(ref epic) = parent_epic {
         Event::child_created(
             id.clone(),
@@ -120,9 +123,9 @@ pub fn new(
     } else {
         Event::created(id.clone(), title.clone(), priority, body)
     };
-    store.append_event(&event)?;
+    tx.add_event(event);
 
-    // Emit ChangelogTypeSet event if changelog type was provided
+    // Add ChangelogTypeSet event if changelog type was provided
     if let Some(ct_str) = changelog_type_str {
         let changelog_type: ChangelogType = ct_str.parse().with_context(|| {
             format!(
@@ -131,20 +134,23 @@ pub fn new(
             )
         })?;
         let event = Event::changelog_type_set(id.clone(), changelog_type);
-        store.append_event(&event)?;
+        tx.add_event(event);
     }
 
-    // Emit VersionAdded event if version was provided
+    // Add VersionAdded event if version was provided
     if let Some(ver) = version {
         let event = Event::version_added(id.clone(), ver.to_string());
-        store.append_event(&event)?;
+        tx.add_event(event);
     }
 
-    // Emit TagAdded events for each tag
+    // Add TagAdded events for each tag
     for tag in tags {
         let event = Event::tag_added(id.clone(), tag.clone());
-        store.append_event(&event)?;
+        tx.add_event(event);
     }
+
+    // Commit all events atomically
+    tx.commit()?;
 
     if let Some(epic) = parent_epic {
         println!(
