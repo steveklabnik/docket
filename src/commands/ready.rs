@@ -9,11 +9,12 @@ use crate::store::Store;
 
 /// Show the highest priority approved bugs ready for work.
 ///
-/// Filters to only Approved status bugs, then sorts by:
+/// Filters to only Approved status bugs that have no unresolved dependencies,
+/// then sorts by:
 /// 1. Priority (High > Medium > Low)
 /// 2. Created date (oldest first within same priority)
 ///
-/// For epics, shows the next incomplete step if it's approved.
+/// For epics, shows the next incomplete step if it's approved and unblocked.
 pub fn ready(count: usize, work: bool) -> Result<()> {
     let store = Store::open()?;
     let bugs = store.list_bugs()?;
@@ -21,19 +22,22 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
     // Build list of ready items, handling epics specially
     let mut approved: Vec<Bug> = Vec::new();
 
-    for bug in bugs {
+    for bug in &bugs {
         if bug.is_epic() {
-            // For epics, check if the next step is approved
+            // For epics, check if the next step is approved and unblocked
             if let Ok(Some(next)) = epic::next_step(&store, bug.id()) {
-                if matches!(next.status(), Status::Approved) {
+                if matches!(next.status(), Status::Approved)
+                    && !has_unresolved_dependencies(&next, &bugs)
+                {
                     // Include the child step (not the epic itself)
                     approved.push(next);
                 }
             }
         } else if !bug.is_child() {
-            // Regular bugs (not epic children) - include if approved
-            if matches!(bug.status(), Status::Approved) {
-                approved.push(bug);
+            // Regular bugs (not epic children) - include if approved and unblocked
+            if matches!(bug.status(), Status::Approved) && !has_unresolved_dependencies(bug, &bugs)
+            {
+                approved.push(bug.clone());
             }
         }
         // Note: epic children are handled via their parent epic above,
@@ -183,4 +187,19 @@ fn format_priority(priority: &Priority) -> colored::ColoredString {
         Priority::Medium => s.normal(),
         Priority::Low => s.dimmed(),
     }
+}
+
+/// Check if a bug has unresolved dependencies (dependencies that are not Done)
+fn has_unresolved_dependencies(bug: &Bug, all_bugs: &[Bug]) -> bool {
+    if !bug.has_dependencies() {
+        return false;
+    }
+
+    bug.blocked_by().iter().any(|blocker_id| {
+        all_bugs
+            .iter()
+            .find(|b| b.id() == blocker_id)
+            .map(|b| !matches!(b.status(), Status::Done))
+            .unwrap_or(true) // If blocker not found, consider it unresolved
+    })
 }

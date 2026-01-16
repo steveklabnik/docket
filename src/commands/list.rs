@@ -148,15 +148,18 @@ pub fn list(
         return Ok(());
     }
 
+    // Get all bugs for dependency resolution
+    let all_bugs = store.list_bugs()?;
+
     if interactive {
-        run_interactive_mode(&store, &filtered)
+        run_interactive_mode(&store, &filtered, &all_bugs)
     } else {
-        print_bug_list(&store, &filtered);
+        print_bug_list(&store, &filtered, &all_bugs);
         Ok(())
     }
 }
 
-fn print_bug_list(store: &Store, bugs: &[Bug]) {
+fn print_bug_list(store: &Store, bugs: &[Bug], all_bugs: &[Bug]) {
     // Print header
     println!(
         "{:6} {:12} {:8} {:10} {:20} {}",
@@ -171,17 +174,23 @@ fn print_bug_list(store: &Store, bugs: &[Bug]) {
 
     // Print bugs
     for bug in bugs {
-        print_bug_row(store, bug, false);
+        print_bug_row(store, bug, false, all_bugs);
     }
 }
 
-fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
+fn print_bug_row(store: &Store, bug: &Bug, selected: bool, all_bugs: &[Bug]) {
+    // Check if bug has unresolved dependencies
+    let has_unresolved_deps = has_unresolved_dependencies(bug, all_bugs);
+
     // For epics, show progress instead of status
     let status_str = if bug.is_epic() {
         match epic::epic_progress(store, bug.id()) {
             Ok((completed, total)) if total > 0 => format!("[{}/{}]", completed, total),
             _ => format!("{}", bug.status()),
         }
+    } else if has_unresolved_deps {
+        // Show dependency indicator along with status
+        format!("{} [dep]", bug.status())
     } else {
         format!("{}", bug.status())
     };
@@ -202,6 +211,9 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
                 Status::NotPlanned => status_str.red(),
             }
         }
+    } else if has_unresolved_deps {
+        // Highlight bugs with unresolved dependencies in orange/yellow
+        status_str.yellow()
     } else {
         match bug.status() {
             Status::Draft => status_str.dimmed(),
@@ -267,6 +279,21 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool) {
     }
 }
 
+/// Check if a bug has unresolved dependencies (dependencies that are not Done)
+fn has_unresolved_dependencies(bug: &Bug, all_bugs: &[Bug]) -> bool {
+    if !bug.has_dependencies() {
+        return false;
+    }
+
+    bug.blocked_by().iter().any(|blocker_id| {
+        all_bugs
+            .iter()
+            .find(|b| b.id() == blocker_id)
+            .map(|b| !matches!(b.status(), Status::Done))
+            .unwrap_or(true) // If blocker not found, consider it unresolved
+    })
+}
+
 /// Interactive mode action result
 enum InteractiveAction {
     Show(String),
@@ -276,13 +303,13 @@ enum InteractiveAction {
     Refresh,
 }
 
-fn run_interactive_mode(store: &Store, bugs: &[Bug]) -> Result<()> {
+fn run_interactive_mode(store: &Store, bugs: &[Bug], all_bugs: &[Bug]) -> Result<()> {
     let term = Term::stdout();
     let mut selected: usize = 0;
     let bug_count = bugs.len();
 
     // Initial render
-    render_interactive_list(&term, store, bugs, selected)?;
+    render_interactive_list(&term, store, bugs, selected, all_bugs)?;
 
     loop {
         let key = term.read_key().context("failed to read key")?;
@@ -306,7 +333,7 @@ fn run_interactive_mode(store: &Store, bugs: &[Bug]) -> Result<()> {
 
         match action {
             InteractiveAction::Refresh => {
-                render_interactive_list(&term, store, bugs, selected)?;
+                render_interactive_list(&term, store, bugs, selected, all_bugs)?;
             }
             InteractiveAction::Show(id) => {
                 // Clear the list and show the bug
@@ -315,7 +342,7 @@ fn run_interactive_mode(store: &Store, bugs: &[Bug]) -> Result<()> {
                 println!();
                 println!("{}", "Press any key to return to the list...".dimmed());
                 term.read_key()?;
-                render_interactive_list(&term, store, bugs, selected)?;
+                render_interactive_list(&term, store, bugs, selected, all_bugs)?;
             }
             InteractiveAction::Work(id) => {
                 // Exit interactive mode and run work command
@@ -331,7 +358,7 @@ fn run_interactive_mode(store: &Store, bugs: &[Bug]) -> Result<()> {
                     println!("{}", "Press any key to continue...".dimmed());
                     term.read_key()?;
                 }
-                render_interactive_list(&term, store, bugs, selected)?;
+                render_interactive_list(&term, store, bugs, selected, all_bugs)?;
             }
             InteractiveAction::Quit => {
                 term.clear_screen()?;
@@ -346,6 +373,7 @@ fn render_interactive_list(
     store: &Store,
     bugs: &[Bug],
     selected: usize,
+    all_bugs: &[Bug],
 ) -> Result<()> {
     term.clear_screen()?;
 
@@ -363,7 +391,7 @@ fn render_interactive_list(
 
     // Print bugs with selection indicator
     for (i, bug) in bugs.iter().enumerate() {
-        print_bug_row(store, bug, i == selected);
+        print_bug_row(store, bug, i == selected, all_bugs);
     }
 
     // Print help footer

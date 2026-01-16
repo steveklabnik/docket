@@ -116,6 +116,8 @@ fn main() -> Result<()> {
         }
         Commands::Tag { id, tag } => commands::tag(&id, &tag),
         Commands::Untag { id, tag } => commands::untag(&id, &tag),
+        Commands::Depend { id, on } => commands::depend(&id, &on),
+        Commands::Undepend { id, on } => commands::undepend(&id, &on),
         Commands::Approve { id } => commands::approve(&id),
         Commands::Block { id, reason, by } => {
             let id = resolve_bug_id(id)?;

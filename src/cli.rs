@@ -200,6 +200,36 @@ pub enum Commands {
         tag: String,
     },
 
+    /// Add a dependency: bug becomes blocked by another bug
+    ///
+    /// This creates an inter-bug dependency. The bug won't show up in "ready to work"
+    /// views until all dependencies are marked as done.
+    ///
+    /// Unlike `block`, this doesn't change the bug's status - it just records the
+    /// relationship. Use `block` for external blockers that should change status.
+    Depend {
+        /// Bug ID that will depend on another (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: String,
+
+        /// Bug ID that blocks this bug
+        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_bug_id))]
+        on: String,
+    },
+
+    /// Remove a dependency between bugs
+    ///
+    /// This removes an inter-bug dependency without changing the bug's status.
+    Undepend {
+        /// Bug ID to remove dependency from (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        id: String,
+
+        /// Bug ID to stop depending on
+        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_bug_id))]
+        on: String,
+    },
+
     /// Mark a bug as approved for work
     Approve {
         /// Bug ID (prefix match supported)
