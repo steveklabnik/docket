@@ -1,6 +1,6 @@
 //! jj (Jujutsu) integration helpers for workspace detection and operations.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
@@ -119,4 +119,133 @@ pub fn create_fresh_change_if_needed() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Push the current change to a remote branch via jj bookmark.
+/// Creates a bookmark, tracks it, and pushes to origin.
+pub fn push_bookmark(bookmark_name: &str) -> Result<()> {
+    println!(
+        "{} Creating and pushing bookmark {}...",
+        "→".blue(),
+        bookmark_name.cyan()
+    );
+
+    // Create the bookmark pointing to current change
+    let create_output = std::process::Command::new("jj")
+        .args(["bookmark", "create", bookmark_name, "-r", "@"])
+        .output()
+        .context("failed to run jj bookmark create")?;
+
+    if !create_output.status.success() {
+        // Bookmark might already exist, try to set it instead
+        let set_output = std::process::Command::new("jj")
+            .args(["bookmark", "set", bookmark_name, "-r", "@"])
+            .output()
+            .context("failed to run jj bookmark set")?;
+
+        if !set_output.status.success() {
+            let stderr = String::from_utf8_lossy(&set_output.stderr);
+            return Err(anyhow!("failed to create/set bookmark: {}", stderr.trim()));
+        }
+    }
+
+    // Track the bookmark on origin
+    let track_output = std::process::Command::new("jj")
+        .args(["bookmark", "track", bookmark_name, "--remote", "origin"])
+        .output()
+        .context("failed to run jj bookmark track")?;
+
+    // Track might fail if already tracked, that's okay
+    if !track_output.status.success() {
+        let stderr = String::from_utf8_lossy(&track_output.stderr);
+        // Only warn, don't fail - might already be tracked
+        if !stderr.contains("already tracked") {
+            eprintln!(
+                "{} Warning: bookmark track: {}",
+                "!".yellow(),
+                stderr.trim()
+            );
+        }
+    }
+
+    // Push the bookmark
+    let push_output = std::process::Command::new("jj")
+        .args(["git", "push", "-b", bookmark_name])
+        .output()
+        .context("failed to run jj git push")?;
+
+    if !push_output.status.success() {
+        let stderr = String::from_utf8_lossy(&push_output.stderr);
+        return Err(anyhow!("jj git push failed: {}", stderr.trim()));
+    }
+
+    println!("{} Pushed to branch {}", "✓".green(), bookmark_name.cyan());
+    Ok(())
+}
+
+/// Get the git remote URL from jj's git store.
+/// Works for both colocated and non-colocated repos.
+pub fn get_git_remote_url() -> Result<String> {
+    // Get the workspace root
+    let root_output = std::process::Command::new("jj")
+        .args(["workspace", "root"])
+        .output()
+        .context("failed to run jj workspace root")?;
+
+    if !root_output.status.success() {
+        return Err(anyhow!("not in a jj workspace"));
+    }
+
+    let root = String::from_utf8_lossy(&root_output.stdout)
+        .trim()
+        .to_string();
+
+    // Try colocated first (.git), then non-colocated (.jj/repo/store/git)
+    let git_dir = if Path::new(&root).join(".git").exists() {
+        format!("{}/.git", root)
+    } else {
+        format!("{}/.jj/repo/store/git", root)
+    };
+
+    // Get the remote URL using git
+    let url_output = std::process::Command::new("git")
+        .args(["--git-dir", &git_dir, "remote", "get-url", "origin"])
+        .output()
+        .context("failed to run git remote get-url")?;
+
+    if !url_output.status.success() {
+        return Err(anyhow!(
+            "could not get git remote URL. Is 'origin' remote configured?"
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&url_output.stdout)
+        .trim()
+        .to_string())
+}
+
+/// Parse owner/repo from a GitHub URL.
+/// Handles both HTTPS and SSH formats:
+/// - https://github.com/owner/repo.git
+/// - git@github.com:owner/repo.git
+pub fn parse_github_repo(url: &str) -> Result<String> {
+    let url = url.trim();
+
+    // Try HTTPS format: https://github.com/owner/repo.git
+    if let Some(rest) = url.strip_prefix("https://github.com/") {
+        let repo = rest.trim_end_matches(".git");
+        return Ok(repo.to_string());
+    }
+
+    // Try SSH format: git@github.com:owner/repo.git
+    if let Some(rest) = url.strip_prefix("git@github.com:") {
+        let repo = rest.trim_end_matches(".git");
+        return Ok(repo.to_string());
+    }
+
+    Err(anyhow!(
+        "could not parse GitHub repository from URL: {}\n\
+         Expected format: https://github.com/owner/repo or git@github.com:owner/repo",
+        url
+    ))
 }

@@ -147,6 +147,7 @@ fn squash_commits() -> Result<()> {
 }
 
 /// Create a PR using GitHub CLI (gh).
+/// Pushes the current change via jj bookmark and creates PR with --repo flag.
 fn create_pr(bug_title: &str, bug_id: &str) -> Result<()> {
     println!("{} Creating PR with GitHub CLI...", "→".blue());
 
@@ -159,10 +160,28 @@ fn create_pr(bug_title: &str, bug_id: &str) -> Result<()> {
         ));
     }
 
+    // Push the current change to a branch via jj
+    let bookmark_name = format!("bug-{}", bug_id);
+    jj::push_bookmark(&bookmark_name)?;
+
+    // Get the repository info for --repo flag
+    let remote_url = jj::get_git_remote_url()?;
+    let repo = jj::parse_github_repo(&remote_url)?;
+
     let pr_title = format!("{} ({})", bug_title, bug_id);
 
     let output = Command::new("gh")
-        .args(["pr", "create", "--fill", "--title", &pr_title])
+        .args([
+            "pr",
+            "create",
+            "--repo",
+            &repo,
+            "--head",
+            &bookmark_name,
+            "--fill",
+            "--title",
+            &pr_title,
+        ])
         .output()?;
 
     if output.status.success() {
