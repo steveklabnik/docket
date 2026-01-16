@@ -89,8 +89,24 @@ pub enum EventData {
     },
 }
 
+/// Current event schema version.
+///
+/// Increment this when making breaking changes to the event format.
+/// See `docs/schema-versioning.md` for the upgrade policy.
+pub const CURRENT_EVENT_VERSION: u32 = 1;
+
+/// Default version for events that don't have a version field.
+/// This handles backwards compatibility with events created before versioning was added.
+fn default_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
+    /// Schema version for this event. Used for forward/backward compatibility.
+    /// Events without a version field are assumed to be version 1.
+    #[serde(default = "default_version")]
+    pub version: u32,
     pub id: String,
     pub bug_id: String,
     pub timestamp: DateTime<Utc>,
@@ -103,6 +119,7 @@ pub struct Event {
 impl Event {
     pub fn new(bug_id: String, data: EventData) -> Self {
         Event {
+            version: CURRENT_EVENT_VERSION,
             id: Uuid::new_v4().to_string(),
             bug_id,
             timestamp: Utc::now(),
@@ -379,6 +396,7 @@ mod tests {
 
     fn make_event(bug_id: &str, data: EventData, timestamp: DateTime<Utc>) -> Event {
         Event {
+            version: CURRENT_EVENT_VERSION,
             id: "test-event-id".to_string(),
             bug_id: bug_id.to_string(),
             timestamp,
@@ -670,5 +688,56 @@ mod tests {
 
         let events = read_events(&path).unwrap();
         assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn parse_event_without_version_field() {
+        // Events created before versioning was added don't have a version field.
+        // The parser should handle this by defaulting to version 1.
+        let json_without_version = r#"{"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"created","data":{"title":"Test","priority":"medium","body":"Body"}}"#;
+
+        let event: Event = serde_json::from_str(json_without_version).unwrap();
+
+        assert_eq!(event.version, 1);
+        assert_eq!(event.id, "e1");
+        assert_eq!(event.bug_id, "abc1");
+        assert!(matches!(event.data, EventData::Created { .. }));
+    }
+
+    #[test]
+    fn parse_event_with_version_field() {
+        // Events with an explicit version field should use that version.
+        let json_with_version = r#"{"version":2,"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"created","data":{"title":"Test","priority":"medium","body":"Body"}}"#;
+
+        let event: Event = serde_json::from_str(json_with_version).unwrap();
+
+        assert_eq!(event.version, 2);
+    }
+
+    #[test]
+    fn new_event_has_current_version() {
+        let event = Event::created(
+            "abc1".to_string(),
+            "Test".to_string(),
+            Priority::Medium,
+            "Body".to_string(),
+        );
+
+        assert_eq!(event.version, CURRENT_EVENT_VERSION);
+    }
+
+    #[test]
+    fn serialized_event_includes_version() {
+        let event = Event::created(
+            "abc1".to_string(),
+            "Test".to_string(),
+            Priority::Medium,
+            "Body".to_string(),
+        );
+
+        let json = serde_json::to_string(&event).unwrap();
+
+        // The version field should be included in serialized output
+        assert!(json.contains("\"version\":1"));
     }
 }

@@ -116,6 +116,7 @@ Each command in `commands/`:
 | `.docket/bugs/*.jsonl` | Event logs (one per bug) |
 | `.docket/config.toml` | User configuration |
 | `ws-{id}/` | Jujutsu workspaces for active work |
+| `docs/schema-versioning.md` | Event schema versioning policy |
 
 ## Testing
 
@@ -141,6 +142,9 @@ cargo test
 1. Add variant to `EventData` in `event.rs`
 2. Update `derive_bug()` to handle it
 3. Create command that emits the event
+4. See `docs/schema-versioning.md` for versioning policy
+
+**Important**: Events are versioned for forward/backward compatibility. When modifying the schema, consult the versioning docs to determine if changes are breaking (require version bump) or non-breaking (safe to add with `#[serde(default)]`).
 
 ### Working on a Bug
 
