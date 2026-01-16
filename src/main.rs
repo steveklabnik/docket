@@ -141,9 +141,16 @@ fn main() -> Result<()> {
             let id = resolve_bug_id(id)?;
             commands::reject(&id)
         }
-        Commands::Done { id, auto, force } => {
+        Commands::Done {
+            id,
+            auto,
+            force,
+            describe,
+            squash,
+            submit,
+        } => {
             let id = resolve_bug_id(id)?;
-            commands::done(&id, auto, force)
+            commands::done(&id, auto, force, describe, squash, submit)
         }
         Commands::Work {
             id,

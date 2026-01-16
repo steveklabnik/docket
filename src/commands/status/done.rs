@@ -123,12 +123,75 @@ fn fallback_commit_message(bug_title: &str, bug_id: &str) -> String {
     format!("Implement {} ({})", bug_title, bug_id)
 }
 
+/// Squash workspace commits using jj squash.
+fn squash_commits() -> Result<()> {
+    println!("{} Squashing workspace commits...", "→".blue());
+
+    let output = std::process::Command::new("jj").args(["squash"]).output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            println!("{} Squashed commits", "✓".green());
+            Ok(())
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("jj squash failed: {}", stderr.trim()))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
+        Err(e) => Err(anyhow!("failed to run jj squash: {}", e)),
+    }
+}
+
+/// Create a PR using GitHub CLI (gh).
+fn create_pr(bug_title: &str, bug_id: &str) -> Result<()> {
+    println!("{} Creating PR with GitHub CLI...", "→".blue());
+
+    // Check if gh is available
+    let check = Command::new("gh").args(["--version"]).output();
+    if check.is_err() || !check.unwrap().status.success() {
+        return Err(anyhow!(
+            "GitHub CLI (gh) is not installed or not configured.\n\
+             Install from https://cli.github.com/ and run 'gh auth login'"
+        ));
+    }
+
+    let pr_title = format!("{} ({})", bug_title, bug_id);
+
+    let output = Command::new("gh")
+        .args(["pr", "create", "--fill", "--title", &pr_title])
+        .output()?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        println!("{} Created PR: {}", "✓".green(), stdout.trim());
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(anyhow!("gh pr create failed: {}", stderr.trim()))
+    }
+}
+
 /// Mark a bug as done, handling workspace integration if applicable.
 ///
 /// If `auto` is true, validates that all acceptance criteria checkboxes are checked
 /// before marking the bug as done. If `force` is true along with `auto`, marks
 /// the bug as done even if unchecked criteria remain.
-pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
+///
+/// If `describe` is true, generates a commit message via Claude and updates jj describe.
+/// If `squash` is true, squashes workspace commits before completing.
+/// If `submit` is true, creates a PR using GitHub CLI.
+pub fn done(
+    id: &str,
+    auto: bool,
+    force: bool,
+    describe: bool,
+    squash: bool,
+    submit: bool,
+) -> Result<()> {
     let store = Store::open()?;
     let bug = store.get_bug(id)?;
 
@@ -176,6 +239,9 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
         }
     }
 
+    // Determine if workspace operations are needed
+    let needs_workspace = describe || squash || submit;
+
     // Track if we switched directories (so we can switch back)
     let original_dir = std::env::current_dir().ok();
     let mut switched_to_workspace = false;
@@ -183,8 +249,8 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
     // Check if we're running from a workspace
     let mut in_workspace = jj::is_in_workspace(&bug_id);
 
-    // If not in workspace, check if one exists and switch to it
-    if !in_workspace {
+    // If workspace operations are requested and not in workspace, try to switch to it
+    if needs_workspace && !in_workspace {
         if let Some(workspace_dir) = jj::find_workspace_dir(&bug_id) {
             println!(
                 "{} Found workspace at {}, switching...",
@@ -194,6 +260,14 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
             std::env::set_current_dir(&workspace_dir)?;
             switched_to_workspace = true;
             in_workspace = true;
+        } else if describe || squash {
+            // --describe and --squash require a workspace
+            return Err(anyhow!(
+                "no workspace found for bug '{}'. The --describe and --squash flags require a workspace.\n\
+                 Start work on the bug first with 'docket work {}'.",
+                bug_id,
+                bug_id
+            ));
         }
     }
 
@@ -201,12 +275,13 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
     // workspace's .docket (which will be part of the jj commit history when merged)
     let store = Store::open()?;
 
-    // Emit StatusChanged event BEFORE snapshot so it's captured in the jj commit
-    let status_event = Event::status_changed(bug_id.clone(), old_status.clone(), Status::Done);
-    store.append_event(&status_event)?;
+    // Perform squash first (before describe, so the squashed commit gets the message)
+    if squash && in_workspace {
+        squash_commits()?;
+    }
 
-    if in_workspace {
-        // Running from workspace - do the full workflow
+    // Generate commit message if --describe is passed
+    if describe && in_workspace {
         println!(
             "{} Running from workspace for bug {}",
             "→".blue(),
@@ -218,6 +293,10 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
             .unwrap_or_else(|| fallback_commit_message(&bug_title, &bug_id));
         jj::describe(&commit_message)?;
     }
+
+    // Emit StatusChanged event so it's captured in the jj commit
+    let status_event = Event::status_changed(bug_id.clone(), old_status.clone(), Status::Done);
+    store.append_event(&status_event)?;
 
     println!(
         "{} Completed bug {} ({} -> {})",
@@ -258,6 +337,11 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
         }
     }
 
+    // Create PR if --submit is passed
+    if submit {
+        create_pr(&bug_title, &bug_id)?;
+    }
+
     // Return to original directory if we switched
     if switched_to_workspace {
         if let Some(ref orig) = original_dir {
@@ -266,9 +350,9 @@ pub fn done(id: &str, auto: bool, force: bool) -> Result<()> {
         }
     }
 
-    // Only create a fresh jj change if NOT in a workspace
+    // Only create a fresh jj change if NOT in a workspace and no workspace operations were done
     // (workspace changes stay as-is for review/submission)
-    if !in_workspace {
+    if !in_workspace && !needs_workspace {
         jj::create_fresh_change_if_needed()?;
     }
 

@@ -265,7 +265,11 @@ pub enum Commands {
         id: Option<String>,
     },
 
-    /// Mark a bug as done (uses current workspace bug if no ID provided)
+    /// Mark a bug as done (uses current workspace bug if no ID provided).
+    ///
+    /// By default, only marks the bug status as Done. Use --describe, --squash,
+    /// and --submit for additional operations like generating commit messages,
+    /// squashing commits, or creating PRs.
     Done {
         /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
         #[arg(add = ArgValueCompleter::new(complete_bug_id))]
@@ -278,6 +282,18 @@ pub enum Commands {
         /// Force marking done even if unchecked criteria remain (only with --auto)
         #[arg(long)]
         force: bool,
+
+        /// Generate commit message via Claude and update jj describe
+        #[arg(long)]
+        describe: bool,
+
+        /// Squash workspace commits before completing
+        #[arg(long)]
+        squash: bool,
+
+        /// Create a PR using GitHub CLI (gh)
+        #[arg(long)]
+        submit: bool,
     },
 
     /// Start working on a bug (creates workspace + runs Claude)
