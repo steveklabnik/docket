@@ -21,6 +21,8 @@ You are helping implement a bug tracked by docket. Read the current bug context 
 
 4. **Update progress** as you work:
    - Use `docket update $DOCKET_BUG` to update the bug body with progress
+       - use - for stdin, example: `docket update $DOCKET_BUG --body -`
+       - use file for content, example: `docket update $DOCKET_BUG --body update.txt`
    - Add timestamped entries to the Log section describing what was accomplished
    - Format log entries as: `- YYYY-MM-DD: Description of progress`
    - Check off acceptance criteria by changing `- [ ]` to `- [x]`

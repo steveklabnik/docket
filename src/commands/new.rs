@@ -171,7 +171,7 @@ pub fn new(
                     .join(", ")
             );
         }
-        println!("  Edit with: {} {}", "docket show".dimmed(), id.dimmed());
+        println!("  Edit with: {} {}", "docket edit".dimmed(), id.dimmed());
     }
 
     Ok(())
