@@ -8,6 +8,17 @@ use crate::commands::{approve, show, work};
 use crate::release::UNSCHEDULED_RELEASE;
 use crate::store::Store;
 
+/// Format a release version for display (12 chars max)
+fn format_release(release: &str) -> String {
+    if release == UNSCHEDULED_RELEASE {
+        "-".to_string()
+    } else if release.len() > 12 {
+        format!("{}...", &release[..9])
+    } else {
+        release.to_string()
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn list(
     status_filter: Option<&str>,
@@ -182,15 +193,16 @@ pub fn list(
 fn print_bug_list(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
     // Print header
     println!(
-        "{:6} {:12} {:8} {:10} {:20} {}",
+        "{:6} {:12} {:8} {:12} {:10} {:20} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
+        "RELEASE".bold(),
         "WORKSPACE".bold(),
         "TAGS".bold(),
         "TITLE".bold()
     );
-    println!("{}", "-".repeat(92).dimmed());
+    println!("{}", "-".repeat(106).dimmed());
 
     // Print bugs
     for bug in bugs {
@@ -201,15 +213,16 @@ fn print_bug_list(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
 fn print_bug_tree(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
     // Print header
     println!(
-        "{:6} {:12} {:8} {:10} {:20} {}",
+        "{:6} {:12} {:8} {:12} {:10} {:20} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
+        "RELEASE".bold(),
         "WORKSPACE".bold(),
         "TAGS".bold(),
         "TITLE".bold()
     );
-    println!("{}", "-".repeat(92).dimmed());
+    println!("{}", "-".repeat(106).dimmed());
 
     // Print top-level bugs and their children recursively
     for bug in bugs {
@@ -305,6 +318,14 @@ fn print_bug_row(store: &Store, bug: &Change, selected: bool, all_bugs: &[Change
         .workspace_name(bug.id())
         .unwrap_or_else(|| "-".to_string());
 
+    // Format release version
+    let release_str = format_release(bug.target_release());
+    let release_colored = if bug.target_release() == UNSCHEDULED_RELEASE {
+        release_str.dimmed()
+    } else {
+        release_str.cyan()
+    };
+
     // Format tags compactly (sorted, comma-separated, truncated if too long)
     let tags_str = {
         let mut tags: Vec<_> = bug.tags().iter().map(|s| s.as_str()).collect();
@@ -329,22 +350,24 @@ fn print_bug_row(store: &Store, bug: &Change, selected: bool, all_bugs: &[Change
 
     if selected {
         println!(
-            "{} {:6} {:12} {:8} {:10} {:20} {}",
+            "{} {:6} {:12} {:8} {:12} {:10} {:20} {}",
             selector.green().bold(),
             bug.id().cyan().bold(),
             status_colored.bold(),
             priority_colored.bold(),
+            release_colored.bold(),
             workspace_str.bold(),
             tags_str.yellow().bold(),
             title_display.bold()
         );
     } else {
         println!(
-            "{} {:6} {:12} {:8} {:10} {:20} {}",
+            "{} {:6} {:12} {:8} {:12} {:10} {:20} {}",
             selector,
             bug.id().cyan(),
             status_colored,
             priority_colored,
+            release_colored,
             workspace_str,
             tags_str.yellow(),
             title_display
@@ -452,15 +475,16 @@ fn render_interactive_list(
 
     // Print header
     println!(
-        "  {:6} {:12} {:8} {:10} {:20} {}",
+        "  {:6} {:12} {:8} {:12} {:10} {:20} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
+        "RELEASE".bold(),
         "WORKSPACE".bold(),
         "TAGS".bold(),
         "TITLE".bold()
     );
-    println!("{}", "-".repeat(94).dimmed());
+    println!("{}", "-".repeat(108).dimmed());
 
     // Print bugs with selection indicator
     for (i, bug) in bugs.iter().enumerate() {

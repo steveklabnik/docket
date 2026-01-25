@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 
 use crate::change::{Change, Status};
+use crate::release::UNSCHEDULED_RELEASE;
 use crate::store::Store;
 
 /// A forest represents a connected component of changes in the graph.
@@ -109,9 +110,114 @@ fn calculate_forest_priority(ids: &HashSet<String>, bug_map: &HashMap<&str, &Cha
     }
 }
 
+/// A release group for grouping changes by target release.
+struct ReleaseGroup {
+    release: String,
+    ids: Vec<String>,
+    /// Priority for sorting: lower = more active (active/frozen first, then planning, unscheduled last)
+    priority: u8,
+}
+
+/// Build release groups from changes, grouping by target_release.
+fn build_release_groups(
+    store: &Store,
+    bugs: &[Change],
+    included: &HashSet<String>,
+) -> Vec<ReleaseGroup> {
+    let bug_map: HashMap<&str, &Change> = bugs.iter().map(|b| (b.id(), b)).collect();
+
+    // Group changes by release
+    let mut release_map: HashMap<String, Vec<String>> = HashMap::new();
+    for id in included {
+        if let Some(bug) = bug_map.get(id.as_str()) {
+            release_map
+                .entry(bug.target_release().to_string())
+                .or_default()
+                .push(id.clone());
+        }
+    }
+
+    // Build release groups with priorities
+    let releases = store.list_releases().unwrap_or_default();
+    let release_status: HashMap<&str, u8> = releases
+        .iter()
+        .map(|r| {
+            let priority = match r.status() {
+                crate::release::ReleaseStatus::Active => 0,
+                crate::release::ReleaseStatus::Frozen => 1,
+                crate::release::ReleaseStatus::Planning => 2,
+                crate::release::ReleaseStatus::Released => 3,
+                crate::release::ReleaseStatus::Cancelled => 4,
+            };
+            (r.version(), priority)
+        })
+        .collect();
+
+    let mut groups: Vec<ReleaseGroup> = release_map
+        .into_iter()
+        .map(|(release, ids)| {
+            // Unscheduled gets lowest priority (highest number)
+            let priority = if release == UNSCHEDULED_RELEASE {
+                10
+            } else {
+                *release_status.get(release.as_str()).unwrap_or(&5)
+            };
+
+            ReleaseGroup {
+                release,
+                ids,
+                priority,
+            }
+        })
+        .collect();
+
+    // Sort by priority (active first), then by version for stability
+    groups.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| a.release.cmp(&b.release))
+    });
+
+    // Sort changes within each group by status/priority
+    for group in &mut groups {
+        group.ids.sort_by(|a, b| {
+            let bug_a = bug_map.get(a.as_str());
+            let bug_b = bug_map.get(b.as_str());
+            match (bug_a, bug_b) {
+                (Some(a), Some(b)) => {
+                    // In-progress first, then approved, then draft
+                    let status_ord_a = status_order(a.status());
+                    let status_ord_b = status_order(b.status());
+                    status_ord_a
+                        .cmp(&status_ord_b)
+                        .then_with(|| a.priority().cmp(b.priority()))
+                }
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+    }
+
+    groups
+}
+
+/// Get sorting order for status (lower = more actionable)
+fn status_order(status: &Status) -> u8 {
+    match status {
+        Status::InProgress => 0,
+        Status::Review => 1,
+        Status::Approved => 2,
+        Status::Draft => 3,
+        Status::Blocked => 4,
+        Status::Paused => 5,
+        Status::Done => 6,
+        Status::NotPlanned => 7,
+    }
+}
+
 /// Display the DAG of changes showing hierarchy and dependencies.
 /// By default, hides completed (done/not-planned) changes unless `show_all` is true.
-pub fn graph(id: Option<&str>, show_all: bool) -> Result<()> {
+/// If `by_release` is true, groups changes by target release instead of parent hierarchy.
+pub fn graph(id: Option<&str>, show_all: bool, by_release: bool) -> Result<()> {
     let store = Store::open()?;
     let all_bugs = store.list_changes()?;
 
@@ -152,47 +258,116 @@ pub fn graph(id: Option<&str>, show_all: bool) -> Result<()> {
     // Build bug lookup map
     let bug_map: HashMap<&str, &Change> = all_bugs.iter().map(|b| (b.id(), b)).collect();
 
-    // Build children map for tree traversal
-    let mut children_of: HashMap<&str, Vec<&str>> = HashMap::new();
-    for bug in &all_bugs {
-        if !included_ids.contains(bug.id()) {
-            continue;
+    if by_release {
+        // Group changes by release instead of hierarchy
+        let release_groups = build_release_groups(&store, &all_bugs, &included_ids);
+
+        for (i, group) in release_groups.iter().enumerate() {
+            // Print release header
+            let header = if group.release == UNSCHEDULED_RELEASE {
+                "--- Unscheduled ---".to_string()
+            } else {
+                format!("--- Release {} ---", group.release)
+            };
+            println!("{}", header.bold());
+
+            // Render each change in the group as a flat list
+            for (j, change_id) in group.ids.iter().enumerate() {
+                if let Some(bug) = bug_map.get(change_id.as_str()) {
+                    render_release_item(bug, j == group.ids.len() - 1);
+                }
+            }
+
+            if i < release_groups.len() - 1 {
+                println!(); // Blank line between groups
+            }
         }
-        if let Some(parent_id) = bug.parent() {
-            if included_ids.contains(parent_id) {
-                children_of.entry(parent_id).or_default().push(bug.id());
+    } else {
+        // Build children map for tree traversal
+        let mut children_of: HashMap<&str, Vec<&str>> = HashMap::new();
+        for bug in &all_bugs {
+            if !included_ids.contains(bug.id()) {
+                continue;
+            }
+            if let Some(parent_id) = bug.parent() {
+                if included_ids.contains(parent_id) {
+                    children_of.entry(parent_id).or_default().push(bug.id());
+                }
+            }
+        }
+
+        // Calculate subtree depths for sorting (longer chains first)
+        let depths = calculate_subtree_depths(&bug_map, &children_of, &included_ids);
+
+        // Build forests (connected components)
+        let forests = build_forests(&all_bugs, &included_ids);
+
+        for (i, forest) in forests.iter().enumerate() {
+            // Print forest header
+            println!("{}", format!("--- {} ---", forest.name).bold());
+
+            // Render the tree starting from the root
+            render_tree(
+                &forest.root_id,
+                &bug_map,
+                &children_of,
+                &depths,
+                &forest.ids,
+                "",
+                true, // is_root
+                true, // is_last (doesn't matter for root)
+            );
+
+            if i < forests.len() - 1 {
+                println!(); // Blank line between forests
             }
         }
     }
 
-    // Calculate subtree depths for sorting (longer chains first)
-    let depths = calculate_subtree_depths(&bug_map, &children_of, &included_ids);
-
-    // Build forests (connected components)
-    let forests = build_forests(&all_bugs, &included_ids);
-
-    for (i, forest) in forests.iter().enumerate() {
-        // Print forest header
-        println!("{}", format!("--- {} ---", forest.name).bold());
-
-        // Render the tree starting from the root
-        render_tree(
-            &forest.root_id,
-            &bug_map,
-            &children_of,
-            &depths,
-            &forest.ids,
-            "",
-            true, // is_root
-            true, // is_last (doesn't matter for root)
-        );
-
-        if i < forests.len() - 1 {
-            println!(); // Blank line between forests
-        }
-    }
-
     Ok(())
+}
+
+/// Render a change item in release-grouped view
+fn render_release_item(bug: &Change, is_last: bool) {
+    // Choose node symbol based on status
+    let node_symbol = match bug.status() {
+        Status::Done => "●",
+        Status::InProgress => "◐",
+        Status::Approved => "○",
+        Status::NotPlanned => "✕",
+        _ => "○",
+    };
+
+    // Format status
+    let status_str = format!("{}", bug.status());
+    let status_colored = match bug.status() {
+        Status::Draft => status_str.dimmed(),
+        Status::Approved => status_str.green(),
+        Status::InProgress => status_str.yellow(),
+        Status::Blocked => status_str.red(),
+        Status::Paused => status_str.cyan(),
+        Status::Review => status_str.magenta(),
+        Status::Done => status_str.blue(),
+        Status::NotPlanned => status_str.red(),
+    };
+
+    // Build the connector
+    let connector = if is_last { "└─" } else { "├─" };
+
+    // Print the node
+    println!(
+        "{}{}  {} [{}]",
+        connector,
+        node_symbol,
+        bug.id().cyan(),
+        status_colored
+    );
+
+    // Calculate prefix for title line
+    let cont_prefix = if is_last { "   " } else { "│  " };
+
+    // Print the title
+    println!("{}   {}", cont_prefix, bug.title());
 }
 
 /// Calculate the maximum depth of subtree rooted at each node.

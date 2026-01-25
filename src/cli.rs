@@ -452,6 +452,10 @@ pub enum Commands {
         /// Start work on the top change immediately
         #[arg(long)]
         work: bool,
+
+        /// Filter to changes targeting a specific release
+        #[arg(long)]
+        release: Option<String>,
     },
 
     /// Generate changelog for a version
@@ -522,6 +526,10 @@ pub enum Commands {
         /// Show all changes including done and not-planned
         #[arg(short, long)]
         all: bool,
+
+        /// Group changes by target release instead of parent hierarchy
+        #[arg(long)]
+        by_release: bool,
     },
 
     /// Manage releases (milestones)

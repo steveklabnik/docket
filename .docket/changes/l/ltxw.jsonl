@@ -4,3 +4,6 @@
 {"version":1,"id":"0be36b3c-10eb-4cfd-a2de-f3cc8ad67af3","bug_id":"ltxw","timestamp":"2026-01-16T01:49:28.259003791Z","type":"tag_added","data":{"tag":"0.3.0"},"actor":"DESKTOP-VV370NK"}
 {"version":1,"id":"052a170a-35ce-49da-8880-7a81eb192f86","bug_id":"ltxw","timestamp":"2026-01-16T01:49:37.872418582Z","type":"dependency_added","data":{"blocked_by":"f6wk"},"actor":"DESKTOP-VV370NK"}
 {"version":1,"id":"1c3669ba-1804-46b6-879c-9b45d428494c","bug_id":"ltxw","timestamp":"2026-01-25T21:44:56.063054Z","type":"parent_changed","data":{"new_parent":"9ghd"},"actor":"Steves-MacBook-Pro.local"}
+{"version":1,"id":"b7556746-453b-432d-a631-1bfedc47d828","change_id":"ltxw","timestamp":"2026-01-25T23:40:09.996726Z","type":"release_set","data":{"release":"0.4.0"},"actor":"Steves-MacBook-Pro.local"}
+{"version":1,"id":"8d22fbff-7a37-4948-b6d6-44e381a87488","change_id":"ltxw","timestamp":"2026-01-25T23:40:22.286837Z","type":"tag_removed","data":{"tag":"0.3.0"},"actor":"Steves-MacBook-Pro.local"}
+{"version":1,"id":"9118d085-a6b3-4af7-9140-97c45410f2f4","change_id":"ltxw","timestamp":"2026-01-25T23:40:22.697184Z","type":"tag_removed","data":{"tag":"state-management"},"actor":"Steves-MacBook-Pro.local"}

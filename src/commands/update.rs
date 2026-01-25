@@ -5,6 +5,7 @@ use std::io::{self, Read};
 
 use crate::change::{ChangelogType, Priority, Status};
 use crate::event::Event;
+use crate::release::validate_version;
 use crate::store::Store;
 
 /// Read body content from a file path or stdin (if path is "-")
@@ -56,6 +57,7 @@ pub fn update(
     changelog_type_str: Option<&str>,
     version: Option<&str>,
     remove_version: Option<&str>,
+    release: Option<&str>,
 ) -> Result<()> {
     let store = Store::open()?;
     let bug = store.get_change(id)?;
@@ -98,6 +100,19 @@ pub fn update(
         None => None,
     };
 
+    // Validate release if provided (must be valid semver or "unscheduled")
+    if let Some(rel) = release {
+        validate_version(rel)?;
+        // Check if it's the same as current release
+        if rel == bug.target_release() {
+            println!(
+                "{} Change is already scheduled for release {}",
+                "!".yellow(),
+                rel
+            );
+        }
+    }
+
     // Check if there's anything to update
     if title.is_none()
         && body.is_none()
@@ -106,9 +121,10 @@ pub fn update(
         && changelog_type.is_none()
         && version.is_none()
         && remove_version.is_none()
+        && release.is_none()
     {
         println!(
-            "{} Nothing to update. Provide --title, --body, --priority, --status, --changelog, --version, or --remove-version.",
+            "{} Nothing to update. Provide --title, --body, --priority, --status, --changelog, --version, --remove-version, or --release.",
             "!".yellow()
         );
         return Ok(());
@@ -142,8 +158,11 @@ pub fn update(
     if let Some(new_priority) = priority {
         // Check if priority actually changed
         if new_priority != bug.metadata.priority {
-            let event =
-                Event::priority_changed(bug_id.clone(), bug.metadata.priority, new_priority);
+            let event = Event::priority_changed(
+                bug_id.clone(),
+                bug.metadata.priority.clone(),
+                new_priority,
+            );
             tx.add_event(event);
         }
     }
@@ -178,6 +197,15 @@ pub fn update(
             tx.add_event(event);
         } else {
             version_not_found = true;
+        }
+    }
+
+    // Release scheduling
+    if let Some(rel) = release {
+        // Only add event if release actually changed
+        if rel != bug.target_release() {
+            let event = Event::release_set(bug_id.clone(), rel.to_string());
+            tx.add_event(event);
         }
     }
 
@@ -218,6 +246,9 @@ pub fn update(
     }
     if remove_version.is_some() && !version_not_found {
         changes.push("version removed");
+    }
+    if release.is_some() && release != Some(bug.target_release()) {
+        changes.push("release");
     }
 
     println!(

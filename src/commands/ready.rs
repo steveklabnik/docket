@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 
 use crate::change::{Change, Priority, Status};
 use crate::commands::epic;
+use crate::release::UNSCHEDULED_RELEASE;
 use crate::store::Store;
 
 /// Show the highest priority approved changes ready for work.
@@ -15,7 +16,8 @@ use crate::store::Store;
 /// 2. Created date (oldest first within same priority)
 ///
 /// For parent changes, shows the next incomplete child if it's approved and unblocked.
-pub fn ready(count: usize, work: bool) -> Result<()> {
+/// If `release_filter` is provided, only shows changes targeting that release.
+pub fn ready(count: usize, work: bool, release_filter: Option<&str>) -> Result<()> {
     let store = Store::open()?;
     let bugs = store.list_changes()?;
 
@@ -44,8 +46,20 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
         // so we don't add them directly here to avoid duplicates
     }
 
+    // Apply release filter if provided
+    if let Some(release) = release_filter {
+        approved.retain(|bug| bug.target_release() == release);
+    }
+
     if approved.is_empty() {
-        println!("{}", "No approved changes ready for work.".dimmed());
+        if let Some(release) = release_filter {
+            println!(
+                "{}",
+                format!("No approved changes ready for release {}.", release).dimmed()
+            );
+        } else {
+            println!("{}", "No approved changes ready for work.".dimmed());
+        }
         println!(
             "{}",
             "Run 'docket list --status draft' to see changes awaiting approval.".dimmed()
@@ -54,7 +68,20 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
     }
 
     // Sort by priority (high first), then by created date (oldest first)
+    // For unfiltered view, scheduled changes come before unscheduled
     approved.sort_by(|a, b| {
+        // If no release filter, scheduled changes first
+        if release_filter.is_none() {
+            let a_scheduled = a.target_release() != UNSCHEDULED_RELEASE;
+            let b_scheduled = b.target_release() != UNSCHEDULED_RELEASE;
+            if a_scheduled && !b_scheduled {
+                return Ordering::Less;
+            }
+            if !a_scheduled && b_scheduled {
+                return Ordering::Greater;
+            }
+        }
+
         let priority_cmp = a.priority().cmp(b.priority());
         if priority_cmp == Ordering::Equal {
             // Oldest first within same priority
@@ -97,6 +124,9 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
             String::new()
         };
 
+        // Show release info
+        let release_info = format_release_info(bug.target_release());
+
         println!(
             "{} {} ({}) - {}{}",
             "Ready to work:".green(),
@@ -105,7 +135,7 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
             bug.title(),
             epic_context.dimmed()
         );
-        println!("  Created {}", age.dimmed());
+        println!("  Created {}  {}", age.dimmed(), release_info);
     } else {
         // Multi-bug list format
         for (i, bug) in to_show.iter().enumerate() {
@@ -118,19 +148,41 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
                 String::new()
             };
 
+            // Show release info
+            let release_info = format_release_info_short(bug.target_release());
+
             println!(
-                "{}. {} ({}) - {} ({}){}",
+                "{}. {} ({}) - {} ({}){}{}",
                 (i + 1).to_string().bold(),
                 bug.id().cyan(),
                 format_priority(bug.priority()),
                 bug.title(),
                 age.dimmed(),
+                release_info,
                 epic_info.dimmed()
             );
         }
     }
 
     Ok(())
+}
+
+/// Format release info for single-item display
+fn format_release_info(release: &str) -> colored::ColoredString {
+    if release == UNSCHEDULED_RELEASE {
+        "unscheduled".dimmed()
+    } else {
+        format!("release: {}", release).cyan()
+    }
+}
+
+/// Format release info for list display
+fn format_release_info_short(release: &str) -> String {
+    if release == UNSCHEDULED_RELEASE {
+        String::new()
+    } else {
+        format!(" [{}]", release.cyan())
+    }
 }
 
 /// Format the age of a change as a human-readable string (e.g., "3 days ago")

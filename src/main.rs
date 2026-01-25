@@ -117,7 +117,7 @@ fn main() -> Result<()> {
                 changelog,
                 version,
                 remove_version,
-                release: _release, // TODO: integrate with commands::update when ready
+                release,
             } = *args;
             let id = resolve_change_id(id)?;
             commands::update(
@@ -129,6 +129,7 @@ fn main() -> Result<()> {
                 changelog.as_deref(),
                 version.as_deref(),
                 remove_version.as_deref(),
+                release.as_deref(),
             )
         }
         Commands::Tag { id, tag } => commands::tag(&id, &tag),
@@ -191,7 +192,11 @@ fn main() -> Result<()> {
             dry_run,
         } => commands::sync(id.as_deref(), no_push, no_fetch, no_rebase, dry_run),
         Commands::Completions { shell } => commands::completions(&shell),
-        Commands::Ready { count, work } => commands::ready(count, work),
+        Commands::Ready {
+            count,
+            work,
+            release,
+        } => commands::ready(count, work, release.as_deref()),
         Commands::Changelog {
             version,
             preview,
@@ -224,7 +229,11 @@ fn main() -> Result<()> {
         }
         Commands::Scratch { id, content } => commands::scratch(&id, &content),
         Commands::Reparent { id, parent } => commands::reparent(&id, parent.as_deref()),
-        Commands::Graph { id, all } => commands::graph(id.as_deref(), all),
+        Commands::Graph {
+            id,
+            all,
+            by_release,
+        } => commands::graph(id.as_deref(), all, by_release),
         Commands::Release(release_cmd) => match release_cmd {
             ReleaseCommands::New {
                 version,
