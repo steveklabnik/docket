@@ -1,13 +1,13 @@
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::bug::{Bug, Status};
+use crate::change::{Change, Status};
 use crate::store::Store;
 
 pub fn show(id: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
-    let all_bugs = store.list_bugs()?;
+    let bug = store.get_change(id)?;
+    let all_bugs = store.list_changes()?;
 
     // Print header
     println!("{} {}", bug.id().cyan().bold(), bug.title().bold());
@@ -69,6 +69,29 @@ pub fn show(id: &str) -> Result<()> {
         );
     }
 
+    // Show parent if this is a child change
+    if let Some(parent_id) = bug.parent() {
+        let parent_info = if let Some(parent) = all_bugs.iter().find(|b| b.id() == parent_id) {
+            format!("{} ({})", parent_id.cyan(), parent.title())
+        } else {
+            format!("{} (not found)", parent_id.cyan())
+        };
+        println!("{:12} {}", "Parent:".dimmed(), parent_info);
+    }
+
+    // Show children if this change has any
+    let children = find_children(bug.id(), &all_bugs);
+    if !children.is_empty() {
+        let (completed, total) = count_completed_children(&children);
+        println!(
+            "{:12} {} sub-changes [{}/{}]",
+            "Children:".dimmed(),
+            total,
+            completed.to_string().green(),
+            total
+        );
+    }
+
     // Show dependencies (blocked by)
     if bug.has_dependencies() {
         let blocked_by = format_blocked_by(&bug, &all_bugs);
@@ -98,11 +121,51 @@ pub fn show(id: &str) -> Result<()> {
     // Print body
     println!("{}", bug.body);
 
+    // Show children details if any
+    if !children.is_empty() {
+        println!();
+        println!("{}", "Sub-changes:".bold());
+        println!("{}", "-".repeat(60).dimmed());
+        for child in &children {
+            let status_indicator = if matches!(child.status(), Status::Done) {
+                "✓".green().to_string()
+            } else {
+                "○".dimmed().to_string()
+            };
+            let status_str = format!("{}", child.status());
+            let status_colored = match child.status() {
+                Status::Draft => status_str.dimmed(),
+                Status::Approved => status_str.green(),
+                Status::InProgress => status_str.yellow(),
+                Status::Blocked => status_str.red(),
+                Status::Paused => status_str.cyan(),
+                Status::Review => status_str.magenta(),
+                Status::Done => status_str.blue(),
+                Status::NotPlanned => status_str.red(),
+            };
+            println!(
+                "  {} {} [{}] {}",
+                status_indicator,
+                child.id().cyan(),
+                status_colored,
+                child.title()
+            );
+        }
+    }
+
+    // Show scratchpad if it has content
+    if bug.has_scratchpad() {
+        println!();
+        println!("{}", "Scratchpad:".bold());
+        println!("{}", "-".repeat(60).dimmed());
+        println!("{}", bug.scratchpad());
+    }
+
     Ok(())
 }
 
 /// Format blocked-by dependencies with status indicators
-fn format_blocked_by(bug: &Bug, all_bugs: &[Bug]) -> String {
+fn format_blocked_by(bug: &Change, all_bugs: &[Change]) -> String {
     let mut deps: Vec<_> = bug.blocked_by().iter().collect();
     deps.sort();
 
@@ -130,9 +193,26 @@ fn format_blocked_by(bug: &Bug, all_bugs: &[Bug]) -> String {
 }
 
 /// Find all bugs that are blocked by the given bug ID
-fn find_bugs_blocked_by<'a>(blocker_id: &str, all_bugs: &'a [Bug]) -> Vec<&'a Bug> {
+fn find_bugs_blocked_by<'a>(blocker_id: &str, all_bugs: &'a [Change]) -> Vec<&'a Change> {
     all_bugs
         .iter()
         .filter(|bug| bug.is_blocked_by(blocker_id))
         .collect()
+}
+
+/// Find all children of the given change
+fn find_children<'a>(parent_id: &str, all_bugs: &'a [Change]) -> Vec<&'a Change> {
+    all_bugs
+        .iter()
+        .filter(|bug| bug.parent() == Some(parent_id))
+        .collect()
+}
+
+/// Count completed children (returns (completed, total))
+fn count_completed_children(children: &[&Change]) -> (usize, usize) {
+    let completed = children
+        .iter()
+        .filter(|b| matches!(b.status(), Status::Done))
+        .count();
+    (completed, children.len())
 }

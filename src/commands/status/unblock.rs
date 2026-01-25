@@ -1,22 +1,22 @@
-//! Unblock command - mark a blocked bug as back in progress or remove a dependency.
+//! Unblock command - mark a blocked change as back in progress or remove a dependency.
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::event::Event;
 use crate::store::Store;
 
-/// Mark a blocked bug as back in progress or remove a dependency.
+/// Mark a blocked change as back in progress or remove a dependency.
 ///
-/// If `by` is provided, this removes an inter-bug dependency.
-/// If `by` is not provided, this changes the bug's status from Blocked to InProgress.
+/// If `by` is provided, this removes an inter-change dependency.
+/// If `by` is not provided, this changes the change's status from Blocked to InProgress.
 pub fn unblock(id: &str, by: Option<String>) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
     let bug_id = bug.id().to_string();
 
-    // Handle removing inter-bug dependency
+    // Handle removing inter-change dependency
     if let Some(blocker_id) = by {
         return remove_dependency(&store, &bug_id, &blocker_id);
     }
@@ -27,8 +27,8 @@ pub fn unblock(id: &str, by: Option<String>) -> Result<()> {
     // Validate transition - can only unblock from Blocked
     if !matches!(old_status, Status::Blocked) {
         return Err(anyhow!(
-            "can only unblock bugs that are blocked.\n\
-             Bug '{}' is currently {}.",
+            "can only unblock changes that are blocked.\n\
+             Change '{}' is currently {}.",
             bug_id,
             old_status
         ));
@@ -39,7 +39,7 @@ pub fn unblock(id: &str, by: Option<String>) -> Result<()> {
     store.append_event(&event)?;
 
     println!(
-        "{} Unblocked bug {} ({} -> {})",
+        "{} Unblocked change {} ({} -> {})",
         "✓".green(),
         bug_id.cyan(),
         "blocked".red(),
@@ -49,18 +49,18 @@ pub fn unblock(id: &str, by: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// Remove an inter-bug dependency.
+/// Remove an inter-change dependency.
 fn remove_dependency(store: &Store, bug_id: &str, blocker_id: &str) -> Result<()> {
     // Resolve the blocker ID
     let blocker_full_id = store.resolve_id(blocker_id)?;
 
-    // Get the bug to check existing dependencies
-    let bug = store.get_bug(bug_id)?;
+    // Get the change to check existing dependencies
+    let bug = store.get_change(bug_id)?;
 
     // Check if dependency exists
     if !bug.is_blocked_by(&blocker_full_id) {
         return Err(anyhow!(
-            "bug {} is not blocked by {}",
+            "change {} is not blocked by {}",
             bug.id(),
             blocker_full_id
         ));
@@ -71,7 +71,7 @@ fn remove_dependency(store: &Store, bug_id: &str, blocker_id: &str) -> Result<()
     store.append_event(&event)?;
 
     println!(
-        "{} Bug {} is no longer blocked by {}",
+        "{} Change {} is no longer blocked by {}",
         "✓".green(),
         bug.id().cyan(),
         blocker_full_id.cyan()

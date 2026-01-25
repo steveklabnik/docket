@@ -1,4 +1,4 @@
-pub mod bug;
+pub mod change;
 pub mod cli;
 pub mod commands;
 pub mod config;

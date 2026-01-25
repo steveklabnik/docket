@@ -3,24 +3,25 @@ use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 
 use crate::store::Store;
 
-/// Custom completer for bug IDs
-fn complete_bug_id(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
+/// Custom completer for change IDs
+fn complete_change_id(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let current = current.to_string_lossy();
     let store = match Store::open() {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
 
-    let bugs = match store.list_bugs() {
+    let changes = match store.list_changes() {
         Ok(b) => b,
         Err(_) => return Vec::new(),
     };
 
-    bugs.into_iter()
-        .filter(|bug| bug.id().starts_with(current.as_ref()))
-        .map(|bug| {
-            let id = bug.id().to_string();
-            let title = bug.title().to_string();
+    changes
+        .into_iter()
+        .filter(|change| change.id().starts_with(current.as_ref()))
+        .map(|change| {
+            let id = change.id().to_string();
+            let title = change.title().to_string();
             CompletionCandidate::new(id).help(Some(title.into()))
         })
         .collect()
@@ -40,9 +41,9 @@ pub enum Commands {
     /// Initialize a new docket repository
     Init,
 
-    /// Create a new bug
+    /// Create a new change
     New {
-        /// Bug title (if not provided, will prompt interactively)
+        /// Change title (if not provided, will prompt interactively)
         #[arg(short, long)]
         title: Option<String>,
 
@@ -54,7 +55,7 @@ pub enum Commands {
         #[arg(short, long)]
         body: Option<String>,
 
-        /// Template to use for bug body (e.g., default, feature, bugfix, chore, spike)
+        /// Template to use for change body (e.g., default, feature, bugfix, chore, spike)
         #[arg(long)]
         template: Option<String>,
 
@@ -62,16 +63,20 @@ pub enum Commands {
         #[arg(short, long)]
         changelog: Option<String>,
 
-        /// Version to assign to this bug (can be added multiple times for backports)
+        /// Version to assign to this change (can be added multiple times for backports)
         #[arg(short, long)]
         version: Option<String>,
 
-        /// Tags to assign to this bug (can be used multiple times)
+        /// Tags to assign to this change (can be used multiple times)
         #[arg(long)]
         tag: Vec<String>,
 
-        /// Create as a child step of an epic
-        #[arg(short, long, add = ArgValueCompleter::new(complete_bug_id))]
+        /// Create as a child (sub-change) of another change
+        #[arg(long, add = ArgValueCompleter::new(complete_change_id))]
+        parent: Option<String>,
+
+        /// Create as a child step of an epic (legacy, alias for --parent)
+        #[arg(short = 'e', long, add = ArgValueCompleter::new(complete_change_id), hide = true)]
         epic: Option<String>,
 
         /// Open editor immediately after creation to edit the body
@@ -79,7 +84,7 @@ pub enum Commands {
         edit: bool,
     },
 
-    /// List all bugs
+    /// List all changes
     List {
         /// Filter by status
         #[arg(short, long)]
@@ -89,19 +94,19 @@ pub enum Commands {
         #[arg(short, long)]
         priority: Option<String>,
 
-        /// Show all bugs including done
+        /// Show all changes including done
         #[arg(short, long)]
         all: bool,
 
-        /// Show only bugs in review (shorthand for --status review)
+        /// Show only changes in review (shorthand for --status review)
         #[arg(long)]
         review: bool,
 
-        /// Show only blocked bugs (shorthand for --status blocked)
+        /// Show only blocked changes (shorthand for --status blocked)
         #[arg(long)]
         blocked: bool,
 
-        /// Show paused bugs (hidden by default like done bugs)
+        /// Show paused changes (hidden by default like done changes)
         #[arg(long)]
         paused: bool,
 
@@ -113,7 +118,7 @@ pub enum Commands {
         #[arg(short, long)]
         reverse: bool,
 
-        /// Interactive mode for selecting and acting on bugs
+        /// Interactive mode for selecting and acting on changes
         #[arg(short, long)]
         interactive: bool,
 
@@ -121,7 +126,7 @@ pub enum Commands {
         #[arg(short, long)]
         version: Option<String>,
 
-        /// Show only bugs without a version (unreleased)
+        /// Show only changes without a version (unreleased)
         #[arg(long)]
         no_version: bool,
 
@@ -133,29 +138,33 @@ pub enum Commands {
         #[arg(long)]
         tag: Option<String>,
 
-        /// Show only bugs that block other bugs
+        /// Show only changes that block other changes
         #[arg(long)]
         blocking: bool,
 
-        /// Show only bugs blocked by a specific bug ID
-        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_bug_id))]
+        /// Show only changes blocked by a specific change ID
+        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_change_id))]
         depends_on: Option<String>,
+
+        /// Show as flat list instead of tree structure
+        #[arg(long)]
+        flat: bool,
     },
 
-    /// Show details of a bug (uses current workspace bug if no ID provided)
+    /// Show details of a change (uses current workspace change if no ID provided)
     Show {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
     },
 
-    /// Update a bug's title, body, priority, or status (uses current workspace bug if no ID provided)
+    /// Update a change's title, body, priority, or status (uses current workspace change if no ID provided)
     Update {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
 
-        /// New title for the bug
+        /// New title for the change
         #[arg(short, long)]
         title: Option<String>,
 
@@ -175,102 +184,102 @@ pub enum Commands {
         #[arg(short, long)]
         changelog: Option<String>,
 
-        /// Add a version to this bug (can be used multiple times for backports)
+        /// Add a version to this change (can be used multiple times for backports)
         #[arg(short, long)]
         version: Option<String>,
 
-        /// Remove a version from this bug
+        /// Remove a version from this change
         #[arg(long)]
         remove_version: Option<String>,
     },
 
-    /// Add a tag to a bug
+    /// Add a tag to a change
     Tag {
-        /// Bug ID (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
 
         /// Tag to add
         tag: String,
     },
 
-    /// Remove a tag from a bug
+    /// Remove a tag from a change
     Untag {
-        /// Bug ID (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
 
         /// Tag to remove
         tag: String,
     },
 
-    /// Add a dependency: bug becomes blocked by another bug
+    /// Add a dependency: change becomes blocked by another change
     ///
-    /// This creates an inter-bug dependency. The bug won't show up in "ready to work"
+    /// This creates an inter-change dependency. The change won't show up in "ready to work"
     /// views until all dependencies are marked as done.
     ///
-    /// Unlike `block`, this doesn't change the bug's status - it just records the
+    /// Unlike `block`, this doesn't change the change's status - it just records the
     /// relationship. Use `block` for external blockers that should change status.
     Depend {
-        /// Bug ID that will depend on another (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID that will depend on another (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
 
-        /// Bug ID that blocks this bug
-        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID that blocks this change
+        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_change_id))]
         on: String,
     },
 
-    /// Remove a dependency between bugs
+    /// Remove a dependency between changes
     ///
-    /// This removes an inter-bug dependency without changing the bug's status.
+    /// This removes an inter-change dependency without changing the change's status.
     Undepend {
-        /// Bug ID to remove dependency from (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID to remove dependency from (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
 
-        /// Bug ID to stop depending on
-        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID to stop depending on
+        #[arg(long, value_name = "ID", add = ArgValueCompleter::new(complete_change_id))]
         on: String,
     },
 
-    /// Mark a bug as approved for work
+    /// Mark a change as approved for work
     Approve {
-        /// Bug ID (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
     },
 
-    /// Mark a bug as blocked (on external dependency or another bug)
+    /// Mark a change as blocked (on external dependency or another change)
     Block {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
 
         /// Reason for blocking (e.g., "waiting on API access") - for external blocks
         #[arg(short, long)]
         reason: Option<String>,
 
-        /// Bug ID that blocks this bug (inter-bug dependency)
-        #[arg(long, add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID that blocks this change (inter-change dependency)
+        #[arg(long, add = ArgValueCompleter::new(complete_change_id))]
         by: Option<String>,
     },
 
-    /// Unblock a bug (from external dependency or another bug)
+    /// Unblock a change (from external dependency or another change)
     Unblock {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
 
-        /// Bug ID to remove as a blocker (inter-bug dependency)
-        #[arg(long, add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID to remove as a blocker (inter-change dependency)
+        #[arg(long, add = ArgValueCompleter::new(complete_change_id))]
         by: Option<String>,
     },
 
-    /// Pause a bug (intentionally set work aside)
+    /// Pause a change (intentionally set work aside)
     Pause {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
 
         /// Reason for pausing (e.g., "switching to higher priority work")
@@ -278,35 +287,35 @@ pub enum Commands {
         reason: Option<String>,
     },
 
-    /// Resume work on a paused bug
+    /// Resume work on a paused change
     Resume {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
     },
 
-    /// Submit a bug for code review (uses current workspace bug if no ID provided)
+    /// Submit a change for code review (uses current workspace change if no ID provided)
     Review {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
     },
 
-    /// Reject a bug from review back to in progress
+    /// Reject a change from review back to in progress
     Reject {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
     },
 
-    /// Mark a bug as done (uses current workspace bug if no ID provided).
+    /// Mark a change as done (uses current workspace change if no ID provided).
     ///
-    /// By default, only marks the bug status as Done. Use --describe, --squash,
+    /// By default, only marks the change status as Done. Use --describe, --squash,
     /// and --submit for additional operations like generating commit messages,
     /// squashing commits, or creating PRs.
     Done {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
 
         /// Only mark done if all acceptance criteria checkboxes are checked
@@ -330,10 +339,10 @@ pub enum Commands {
         submit: bool,
     },
 
-    /// Start working on a bug (creates workspace + runs Claude)
+    /// Start working on a change (creates workspace + runs Claude)
     Work {
-        /// Bug ID (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
 
         /// Skip permission prompts in Claude (--dangerously-skip-permissions)
@@ -345,10 +354,10 @@ pub enum Commands {
         auto: bool,
     },
 
-    /// Show event history for a bug
+    /// Show event history for a change
     Log {
-        /// Bug ID (prefix match supported)
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: String,
 
         /// Output as JSON
@@ -358,25 +367,25 @@ pub enum Commands {
 
     /// Clean up a workspace after work is complete
     Cleanup {
-        /// Bug ID (prefix match supported). If not provided, cleans up workspaces for done bugs.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, cleans up workspaces for done changes.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
     },
 
-    /// Print the current workspace's bug ID
+    /// Print the current workspace's change ID
     Current,
 
-    /// Edit a bug's body in your editor (uses current workspace bug if no ID provided)
+    /// Edit a change's body in your editor (uses current workspace change if no ID provided)
     Edit {
-        /// Bug ID (prefix match supported). If not provided, uses current workspace bug.
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        /// Change ID (prefix match supported). If not provided, uses current workspace change.
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
     },
 
     /// Sync workspaces with trunk (fetch, rebase, push)
     Sync {
-        /// Only sync specific bug ID (prefix match)
-        #[arg(short, long, add = ArgValueCompleter::new(complete_bug_id))]
+        /// Only sync specific change ID (prefix match)
+        #[arg(short, long, add = ArgValueCompleter::new(complete_change_id))]
         id: Option<String>,
 
         /// Skip pushing after rebase
@@ -402,13 +411,13 @@ pub enum Commands {
         shell: String,
     },
 
-    /// Show highest priority approved bugs ready for work
+    /// Show highest priority approved changes ready for work
     Ready {
-        /// Number of bugs to show
+        /// Number of changes to show
         #[arg(short = 'n', long, default_value = "1")]
         count: usize,
 
-        /// Start work on the top bug immediately
+        /// Start work on the top change immediately
         #[arg(long)]
         work: bool,
     },
@@ -433,11 +442,53 @@ pub enum Commands {
     /// Otherwise, creates a new epic with the argument as the title.
     Epic {
         /// Epic ID to show, or title for new epic
-        #[arg(add = ArgValueCompleter::new(complete_bug_id))]
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
         id_or_title: String,
 
         /// Priority level (only used when creating)
         #[arg(short, long, default_value = "medium")]
         priority: String,
+    },
+
+    /// Append a note to a change's scratchpad
+    ///
+    /// The scratchpad is a persistent, append-only notes section for each change.
+    /// Use it to record working notes, decisions, or progress during implementation.
+    Scratch {
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
+        id: String,
+
+        /// Note content to append to the scratchpad
+        content: String,
+    },
+
+    /// Move a change under a different parent
+    ///
+    /// Use this to reorganize your change hierarchy. Omit the parent argument
+    /// to make a change top-level (remove its parent).
+    Reparent {
+        /// Change ID to reparent (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
+        id: String,
+
+        /// New parent change ID (omit to make top-level)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
+        parent: Option<String>,
+    },
+
+    /// Visualize the change graph (DAG)
+    ///
+    /// Shows the hierarchy of changes and their dependencies as an ASCII graph.
+    /// Use with a change ID to show only the subgraph rooted at that change.
+    /// By default, hides completed (done/not-planned) changes.
+    Graph {
+        /// Change ID to show subgraph from (omit to show full graph)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
+        id: Option<String>,
+
+        /// Show all changes including done and not-planned
+        #[arg(short, long)]
+        all: bool,
     },
 }

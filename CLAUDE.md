@@ -2,6 +2,10 @@
 
 This document provides context for working on the docket codebase.
 
+## Terminology
+
+Docket tracks **changes** - units of work in a DAG (Directed Acyclic Graph). A "change" can be anything from a small bug fix to a large initiative. Changes can have children (sub-changes) and dependencies (blocked by other changes).
+
 ## Architecture Overview
 
 Docket is a Rust CLI application using **event sourcing** for persistence. All state is derived from immutable event logs.
@@ -10,8 +14,8 @@ Docket is a Rust CLI application using **event sourcing** for persistence. All s
 src/
 ├── main.rs         # CLI entry point (clap derive)
 ├── lib.rs          # Module exports
-├── bug.rs          # Data types: Status, Priority, Bug, BugMetadata
-├── event.rs        # Event system: Event, EventData, derive_bug()
+├── change.rs       # Data types: Status, Priority, Change, ChangeMetadata
+├── event.rs        # Event system: Event, EventData, derive_change()
 ├── store.rs        # Storage: find repo, read/write events
 ├── config.rs       # Configuration loading
 └── commands/       # One module per CLI command
@@ -33,17 +37,20 @@ src/
 
 ## Event System
 
-The core persistence model. Events are appended to JSONL files in `.docket/bugs/{id}.jsonl`.
+The core persistence model. Events are appended to JSONL files in `.docket/changes/{id}.jsonl`.
 
 ### Event Types (event.rs)
 
 ```rust
 pub enum EventData {
-    Created { title, priority, body },
+    Created { title, priority, body, parent },
     StatusChanged { from, to },
     Updated { title: Option, body: Option },
     PriorityChanged { from, to },
-    ChangeLinked { change_id },  // Deprecated, ignored
+    DependencyAdded { blocked_by },
+    DependencyRemoved { blocked_by },
+    ScratchpadAppended { content },
+    ParentChanged { old_parent, new_parent },
 }
 ```
 
@@ -51,7 +58,7 @@ pub enum EventData {
 
 - `append_event(path, event)` - Append JSON line to file
 - `read_events(path)` - Read and sort events by timestamp
-- `derive_bug(events)` - Replay events to compute current Bug state
+- `derive_change(events)` - Replay events to compute current change state
 
 ### Data Flow
 
@@ -63,13 +70,19 @@ pub enum EventData {
 ## Status Flow
 
 ```
-Draft → Approved → InProgress → Done
+Draft → Approved → InProgress → Review → Done
+                      ↓           ↓
+                   Blocked    (reject back to InProgress)
+                      ↓
+                   Paused
 ```
 
-- `new` creates bugs in Draft
-- `approve` transitions Draft → Approved
+- `new` creates changes in Draft
+- `approve` transitions Draft → Approved (auto-approves children)
 - `work` transitions Approved → InProgress
-- `done` transitions any → Done
+- `review` transitions InProgress → Review
+- `reject` transitions Review → InProgress
+- `done` transitions any → Done (auto-completes parent when all children done)
 
 ## Code Conventions
 
@@ -89,7 +102,7 @@ fn example() -> Result<()> {
 Uses `colored` crate. Common patterns:
 
 ```rust
-println!("{} Bug created: {}", "✓".green(), id);
+println!("{} Created change: {}", "✓".green(), id);
 println!("{} Starting work on {}", "→".blue(), title);
 println!("{} Warning: uncommitted changes", "!".yellow());
 ```
@@ -113,7 +126,7 @@ Each command in `commands/`:
 
 | Location | Purpose |
 |----------|---------|
-| `.docket/bugs/*.jsonl` | Event logs (one per bug) |
+| `.docket/changes/*.jsonl` | Event logs (one per change) |
 | `.docket/config.toml` | User configuration |
 | `ws-{id}/` | Jujutsu workspaces for active work |
 | `docs/schema-versioning.md` | Event schema versioning policy |
@@ -140,19 +153,16 @@ cargo test
 ### Adding a New Event Type
 
 1. Add variant to `EventData` in `event.rs`
-2. Update `derive_bug()` to handle it
+2. Update `derive_change()` to handle it
 3. Create command that emits the event
-4. See `docs/schema-versioning.md` for versioning policy
 
-**Important**: Events are versioned for forward/backward compatibility. When modifying the schema, consult the versioning docs to determine if changes are breaking (require version bump) or non-breaking (safe to add with `#[serde(default)]`).
+### Working on a Change
 
-### Working on a Bug
-
-The `work` command sets `DOCKET_BUG` env var. Access it:
+The `work` command creates a workspace directory (ws-{id}). Use the `current` command to get the current change ID when inside a workspace:
 
 ```bash
-cargo run -- show $DOCKET_BUG
-cargo run -- update $DOCKET_BUG
+cargo run -- current
+cargo run -- show $(cargo run -- current)
 ```
 
 ## Dependencies

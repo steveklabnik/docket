@@ -10,7 +10,7 @@ use crate::store::Store;
 /// Edit a bug's body in the user's preferred editor.
 pub fn edit(id: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
     let bug_id = bug.metadata.id.clone();
 
     // Launch editor with current body content

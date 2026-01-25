@@ -1,16 +1,16 @@
-//! The `reject` command for rejecting bugs from review back to in progress.
+//! The `reject` command for rejecting changes from review back to in progress.
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::event::Event;
 use crate::store::Store;
 
-/// Reject a bug from review back to in progress (Review -> InProgress).
+/// Reject a change from review back to in progress (Review -> InProgress).
 pub fn reject(id: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
 
     let old_status = bug.status().clone();
     let bug_id = bug.id().to_string();
@@ -18,8 +18,8 @@ pub fn reject(id: &str) -> Result<()> {
     // Only allow transition from Review
     if !matches!(old_status, Status::Review) {
         return Err(anyhow!(
-            "bug '{}' is not in review (current status: {}).\n\
-             Only bugs that are in review can be rejected.",
+            "change '{}' is not in review (current status: {}).\n\
+             Only changes that are in review can be rejected.",
             bug_id,
             old_status
         ));
@@ -30,7 +30,7 @@ pub fn reject(id: &str) -> Result<()> {
     store.append_event(&event)?;
 
     println!(
-        "{} Rejected bug {} from review ({} -> {})",
+        "{} Rejected change {} from review ({} -> {})",
         "✓".green(),
         bug_id.cyan(),
         format!("{}", old_status).dimmed(),

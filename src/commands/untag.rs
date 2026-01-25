@@ -6,12 +6,12 @@ use crate::store::Store;
 
 pub fn untag(id: &str, tag: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
 
     // Check if the tag exists
     if !bug.has_tag(tag) {
         bail!(
-            "Bug {} does not have tag '{}'",
+            "Change {} does not have tag '{}'",
             bug.id().cyan(),
             tag.yellow()
         );

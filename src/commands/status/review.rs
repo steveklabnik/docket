@@ -1,16 +1,16 @@
-//! The `review` command for submitting bugs for code review.
+//! The `review` command for submitting changes for code review.
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::event::Event;
 use crate::store::Store;
 
-/// Submit a bug for code review (InProgress -> Review).
+/// Submit a change for code review (InProgress -> Review).
 pub fn review(id: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
 
     let old_status = bug.status().clone();
     let bug_id = bug.id().to_string();
@@ -18,8 +18,8 @@ pub fn review(id: &str) -> Result<()> {
     // Only allow transition from InProgress
     if !matches!(old_status, Status::InProgress) {
         return Err(anyhow!(
-            "bug '{}' is not in progress (current status: {}).\n\
-             Only bugs that are in progress can be submitted for review.",
+            "change '{}' is not in progress (current status: {}).\n\
+             Only changes that are in progress can be submitted for review.",
             bug_id,
             old_status
         ));
@@ -30,7 +30,7 @@ pub fn review(id: &str) -> Result<()> {
     store.append_event(&event)?;
 
     println!(
-        "{} Submitted bug {} for review ({} -> {})",
+        "{} Submitted change {} for review ({} -> {})",
         "✓".green(),
         bug_id.cyan(),
         format!("{}", old_status).dimmed(),

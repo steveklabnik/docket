@@ -3,8 +3,8 @@ use colored::Colorize;
 use dialoguer::console::{Key, Term};
 use std::cmp::Ordering;
 
-use crate::bug::{Bug, ChangelogType, Priority, SortBy, Status};
-use crate::commands::{approve, epic, show, work};
+use crate::change::{Change, ChangelogType, Priority, SortBy, Status};
+use crate::commands::{approve, show, work};
 use crate::store::Store;
 
 #[allow(clippy::too_many_arguments)]
@@ -22,15 +22,16 @@ pub fn list(
     tag_filter: Option<&str>,
     blocking_filter: bool,
     depends_on_filter: Option<&str>,
+    flat: bool,
 ) -> Result<()> {
     // Parse sort field early to catch invalid input
     let sort_by: SortBy = sort_by.parse().context("invalid sort field")?;
 
     let store = Store::open()?;
-    let bugs = store.list_bugs()?;
+    let bugs = store.list_changes()?;
 
     if bugs.is_empty() {
-        println!("{}", "No bugs found.".dimmed());
+        println!("{}", "No changes found.".dimmed());
         return Ok(());
     }
 
@@ -57,8 +58,9 @@ pub fn list(
     let mut filtered: Vec<_> = bugs
         .into_iter()
         .filter(|bug| {
-            // Hide child bugs from the main list (they're shown under their epic)
-            if bug.is_child() {
+            // In tree mode, hide child bugs from the top level (they're shown under their parent)
+            // In flat mode, show all bugs at the same level
+            if !flat && bug.is_child() {
                 return false;
             }
 
@@ -144,22 +146,25 @@ pub fn list(
     });
 
     if filtered.is_empty() {
-        println!("{}", "No bugs match the filters.".dimmed());
+        println!("{}", "No changes match the filters.".dimmed());
         return Ok(());
     }
 
     // Get all bugs for dependency resolution
-    let all_bugs = store.list_bugs()?;
+    let all_bugs = store.list_changes()?;
 
     if interactive {
         run_interactive_mode(&store, &filtered, &all_bugs)
-    } else {
+    } else if flat {
         print_bug_list(&store, &filtered, &all_bugs);
+        Ok(())
+    } else {
+        print_bug_tree(&store, &filtered, &all_bugs);
         Ok(())
     }
 }
 
-fn print_bug_list(store: &Store, bugs: &[Bug], all_bugs: &[Bug]) {
+fn print_bug_list(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
     // Print header
     println!(
         "{:6} {:12} {:8} {:10} {:20} {}",
@@ -174,19 +179,66 @@ fn print_bug_list(store: &Store, bugs: &[Bug], all_bugs: &[Bug]) {
 
     // Print bugs
     for bug in bugs {
-        print_bug_row(store, bug, false, all_bugs);
+        print_bug_row(store, bug, false, all_bugs, 0);
     }
 }
 
-fn print_bug_row(store: &Store, bug: &Bug, selected: bool, all_bugs: &[Bug]) {
+fn print_bug_tree(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
+    // Print header
+    println!(
+        "{:6} {:12} {:8} {:10} {:20} {}",
+        "ID".bold(),
+        "STATUS".bold(),
+        "PRIORITY".bold(),
+        "WORKSPACE".bold(),
+        "TAGS".bold(),
+        "TITLE".bold()
+    );
+    println!("{}", "-".repeat(92).dimmed());
+
+    // Print top-level bugs and their children recursively
+    for bug in bugs {
+        print_bug_row(store, bug, false, all_bugs, 0);
+        print_children(store, bug.id(), all_bugs, 1);
+    }
+}
+
+fn print_children(store: &Store, parent_id: &str, all_bugs: &[Change], depth: usize) {
+    // Find children of this parent
+    let children: Vec<_> = all_bugs
+        .iter()
+        .filter(|b| b.parent() == Some(parent_id))
+        .collect();
+
+    for child in children {
+        print_bug_row(store, child, false, all_bugs, depth);
+        // Recursively print grandchildren
+        print_children(store, child.id(), all_bugs, depth + 1);
+    }
+}
+
+fn print_bug_row(store: &Store, bug: &Change, selected: bool, all_bugs: &[Change], depth: usize) {
     // Check if bug has unresolved dependencies
     let has_unresolved_deps = has_unresolved_dependencies(bug, all_bugs);
 
-    // For epics, show progress instead of status
-    let status_str = if bug.is_epic() {
-        match epic::epic_progress(store, bug.id()) {
-            Ok((completed, total)) if total > 0 => format!("[{}/{}]", completed, total),
-            _ => format!("{}", bug.status()),
+    // Check if this bug has children (making it a parent change)
+    let has_children = all_bugs.iter().any(|b| b.parent() == Some(bug.id()));
+
+    // For changes with children, show progress instead of status
+    let status_str = if has_children {
+        let children: Vec<_> = all_bugs
+            .iter()
+            .filter(|b| b.parent() == Some(bug.id()))
+            .collect();
+        let completed = children
+            .iter()
+            .filter(|b| matches!(b.status(), Status::Done))
+            .count();
+        let total = children.len();
+        if total > 0 {
+            format!("[{}/{}]", completed, total)
+        } else {
+            format!("{}", bug.status())
         }
     } else if has_unresolved_deps {
         // Show dependency indicator along with status
@@ -195,7 +247,7 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool, all_bugs: &[Bug]) {
         format!("{}", bug.status())
     };
 
-    let status_colored = if bug.is_epic() {
+    let status_colored = if has_children {
         // Progress indicator styling
         if status_str.starts_with('[') {
             status_str.magenta()
@@ -252,7 +304,13 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool, all_bugs: &[Bug]) {
         }
     };
 
+    // Create indentation for tree display
+    let indent = "  ".repeat(depth);
+    let tree_prefix = if depth > 0 { "└─ " } else { "" };
     let selector = if selected { ">" } else { " " };
+
+    // Adjust title display to account for indentation
+    let title_display = format!("{}{}{}", indent, tree_prefix, bug.title());
 
     if selected {
         println!(
@@ -263,7 +321,7 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool, all_bugs: &[Bug]) {
             priority_colored.bold(),
             workspace_str.bold(),
             tags_str.yellow().bold(),
-            bug.title().bold()
+            title_display.bold()
         );
     } else {
         println!(
@@ -274,13 +332,13 @@ fn print_bug_row(store: &Store, bug: &Bug, selected: bool, all_bugs: &[Bug]) {
             priority_colored,
             workspace_str,
             tags_str.yellow(),
-            bug.title()
+            title_display
         );
     }
 }
 
 /// Check if a bug has unresolved dependencies (dependencies that are not Done)
-fn has_unresolved_dependencies(bug: &Bug, all_bugs: &[Bug]) -> bool {
+fn has_unresolved_dependencies(bug: &Change, all_bugs: &[Change]) -> bool {
     if !bug.has_dependencies() {
         return false;
     }
@@ -303,7 +361,7 @@ enum InteractiveAction {
     Refresh,
 }
 
-fn run_interactive_mode(store: &Store, bugs: &[Bug], all_bugs: &[Bug]) -> Result<()> {
+fn run_interactive_mode(store: &Store, bugs: &[Change], all_bugs: &[Change]) -> Result<()> {
     let term = Term::stdout();
     let mut selected: usize = 0;
     let bug_count = bugs.len();
@@ -371,9 +429,9 @@ fn run_interactive_mode(store: &Store, bugs: &[Bug], all_bugs: &[Bug]) -> Result
 fn render_interactive_list(
     term: &Term,
     store: &Store,
-    bugs: &[Bug],
+    bugs: &[Change],
     selected: usize,
-    all_bugs: &[Bug],
+    all_bugs: &[Change],
 ) -> Result<()> {
     term.clear_screen()?;
 
@@ -391,7 +449,7 @@ fn render_interactive_list(
 
     // Print bugs with selection indicator
     for (i, bug) in bugs.iter().enumerate() {
-        print_bug_row(store, bug, i == selected, all_bugs);
+        print_bug_row(store, bug, i == selected, all_bugs, 0);
     }
 
     // Print help footer
@@ -408,7 +466,7 @@ fn render_interactive_list(
 /// Primary sort groups approved bugs (non-Draft) before unapproved (Draft).
 /// Secondary sort is by the specified field.
 /// Tertiary sort is by created date (oldest first) within the same group.
-fn compare_bugs(a: &Bug, b: &Bug, sort_by: SortBy) -> Ordering {
+fn compare_bugs(a: &Change, b: &Change, sort_by: SortBy) -> Ordering {
     // Primary: approved (non-Draft) bugs come before Draft bugs
     let a_approved = !matches!(a.status(), Status::Draft);
     let b_approved = !matches!(b.status(), Status::Draft);

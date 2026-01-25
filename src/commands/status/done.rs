@@ -5,7 +5,7 @@ use std::process::Command;
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::commands::epic;
 use crate::event::Event;
 use crate::store::Store;
@@ -80,7 +80,7 @@ fn generate_commit_message(bug_id: &str) -> Option<String> {
             "--allowedTools",
             "Bash,Read",
         ])
-        .env("DOCKET_BUG", bug_id)
+        .env("DOCKET_CHANGE", bug_id)
         .output();
 
     match output {
@@ -212,7 +212,7 @@ pub fn done(
     submit: bool,
 ) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
 
     let old_status = bug.status().clone();
     let bug_id = bug.id().to_string();
@@ -220,8 +220,8 @@ pub fn done(
 
     if matches!(old_status, Status::Done) {
         return Err(anyhow!(
-            "bug '{}' is already marked as done.\n\
-             Use 'docket show {}' to view the bug details.",
+            "change '{}' is already marked as done.\n\
+             Use 'docket show {}' to view the change details.",
             bug_id,
             bug_id
         ));
@@ -233,8 +233,8 @@ pub fn done(
 
         if checkbox_status.has_no_checkboxes() {
             return Err(anyhow!(
-                "cannot use --auto: bug '{}' has no acceptance criteria checkboxes.\n\
-                 Add checkboxes to the bug body using `- [ ]` format, or omit --auto.",
+                "cannot use --auto: change '{}' has no acceptance criteria checkboxes.\n\
+                 Add checkboxes to the change body using `- [ ]` format, or omit --auto.",
                 bug_id
             ));
         }
@@ -248,7 +248,7 @@ pub fn done(
                 );
             } else {
                 return Err(anyhow!(
-                    "cannot mark bug '{}' as done: {} of {} acceptance criteria are unchecked.\n\
+                    "cannot mark change '{}' as done: {} of {} acceptance criteria are unchecked.\n\
                      Check all criteria with `- [x]` or use --force to override.",
                     bug_id,
                     checkbox_status.unchecked,
@@ -282,8 +282,8 @@ pub fn done(
         } else if describe || squash {
             // --describe and --squash require a workspace
             return Err(anyhow!(
-                "no workspace found for bug '{}'. The --describe and --squash flags require a workspace.\n\
-                 Start work on the bug first with 'docket work {}'.",
+                "no workspace found for change '{}'. The --describe and --squash flags require a workspace.\n\
+                 Start work on the change first with 'docket work {}'.",
                 bug_id,
                 bug_id
             ));
@@ -318,38 +318,39 @@ pub fn done(
     store.append_event(&status_event)?;
 
     println!(
-        "{} Completed bug {} ({} -> {})",
+        "{} Completed change {} ({} -> {})",
         "✓".green(),
         bug_id.cyan(),
         format!("{}", old_status).dimmed(),
         format!("{}", Status::Done).green()
     );
 
-    // Check if this was a child of an epic and if all siblings are now done
-    if let Some(parent_epic_id) = bug.parent_epic() {
-        if epic::all_children_done(&store, parent_epic_id)? {
-            // Auto-close the parent epic
-            let parent_epic = store.get_bug(parent_epic_id)?;
-            if !matches!(parent_epic.status(), Status::Done) {
-                let epic_event = Event::status_changed(
-                    parent_epic_id.to_string(),
-                    parent_epic.status().clone(),
+    // Check if this was a child and if all siblings are now done
+    // Use parent() which supports both the new parent field and legacy parent_epic
+    if let Some(parent_id) = bug.parent() {
+        if epic::all_children_done(&store, parent_id)? {
+            // Auto-close the parent change
+            let parent_change = store.get_change(parent_id)?;
+            if !matches!(parent_change.status(), Status::Done) {
+                let parent_event = Event::status_changed(
+                    parent_id.to_string(),
+                    parent_change.status().clone(),
                     Status::Done,
                 );
-                store.append_event(&epic_event)?;
+                store.append_event(&parent_event)?;
                 println!(
-                    "{} All steps complete - epic {} is now done!",
+                    "{} All children complete - {} is now done!",
                     "✓".green(),
-                    parent_epic_id.cyan()
+                    parent_id.cyan()
                 );
             }
         } else {
             // Show progress
-            let (completed, total) = epic::epic_progress(&store, parent_epic_id)?;
+            let (completed, total) = epic::epic_progress(&store, parent_id)?;
             println!(
-                "{} Epic {} progress: {}/{}",
+                "{} {} progress: {}/{}",
                 "→".blue(),
-                parent_epic_id.cyan(),
+                parent_id.cyan(),
                 completed,
                 total
             );

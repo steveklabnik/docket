@@ -102,6 +102,9 @@ name = "bitflags"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "bstr"
@@ -271,6 +274,7 @@ dependencies = [
  "glob",
  "predicates",
  "rand",
+ "sapling-renderdag",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -661,6 +665,15 @@ name = "ryu"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a50f4cf475b65d88e057964e0e9bb1f0aa9bbb2036dc65c64596b42932536984"
+
+[[package]]
+name = "sapling-renderdag"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edffb89cab87bd0901c5749d576f5d37a1f34e05160e936f463f4e94cc447b61"
+dependencies = [
+ "bitflags",
+]
 
 [[package]]
 name = "serde"

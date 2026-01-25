@@ -1,4 +1,4 @@
-//! Undepend command - remove a dependency between bugs.
+//! Undepend command - remove a dependency between changes.
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
@@ -6,20 +6,20 @@ use colored::Colorize;
 use crate::event::Event;
 use crate::store::Store;
 
-/// Remove a dependency: bug `id` is no longer blocked by bug `blocker_id`.
+/// Remove a dependency: change `id` is no longer blocked by change `blocker_id`.
 ///
-/// This removes an inter-bug dependency without changing the bug's status.
+/// This removes an inter-change dependency without changing the change's status.
 pub fn undepend(id: &str, blocker_id: &str) -> Result<()> {
     let store = Store::open()?;
 
-    // Resolve both bug IDs
-    let bug = store.get_bug(id)?;
+    // Resolve both change IDs
+    let bug = store.get_change(id)?;
     let blocker_full_id = store.resolve_id(blocker_id)?;
 
     // Check if dependency exists
     if !bug.is_blocked_by(&blocker_full_id) {
         return Err(anyhow!(
-            "bug {} does not depend on {}",
+            "change {} does not depend on {}",
             bug.id(),
             blocker_full_id
         ));
@@ -30,7 +30,7 @@ pub fn undepend(id: &str, blocker_id: &str) -> Result<()> {
     store.append_event(&event)?;
 
     println!(
-        "{} Bug {} no longer depends on {}",
+        "{} Change {} no longer depends on {}",
         "✓".green(),
         bug.id().cyan(),
         blocker_full_id.cyan()

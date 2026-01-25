@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::bug::{Bug, ChangelogType, Status};
+use crate::change::{Change, ChangelogType, Status};
 use crate::store::Store;
 
 /// Generate changelog for a specific version
 pub fn changelog(version: &str, preview: bool, file: Option<&str>) -> Result<()> {
     let store = Store::open()?;
-    let bugs = store.list_bugs()?;
+    let bugs = store.list_changes()?;
 
     // Filter bugs that have this version
     let version_bugs: Vec<_> = bugs
@@ -21,19 +21,19 @@ pub fn changelog(version: &str, preview: bool, file: Option<&str>) -> Result<()>
 
     if version_bugs.is_empty() {
         println!(
-            "{} No bugs found for version {}",
+            "{} No changes found for version {}",
             "!".yellow(),
             version.cyan()
         );
         return Ok(());
     }
 
-    // Check for bugs without changelog type
+    // Check for changes without changelog type
     let mut warnings = Vec::new();
     for bug in &version_bugs {
         if bug.changelog_type().is_none() {
             warnings.push(format!(
-                "Bug {} ({}) has no changelog type - it will be skipped",
+                "Change {} ({}) has no changelog type - it will be skipped",
                 bug.id(),
                 bug.title()
             ));
@@ -110,14 +110,14 @@ pub fn changelog(version: &str, preview: bool, file: Option<&str>) -> Result<()>
 }
 
 /// Generate the markdown content for a version section
-fn generate_changelog_section(bugs: &[Bug], version: &str) -> Result<String> {
+fn generate_changelog_section(bugs: &[Change], version: &str) -> Result<String> {
     let mut output = String::new();
     let today = Utc::now().format("%Y-%m-%d");
 
     output.push_str(&format!("## [{version}] - {today}\n\n"));
 
     // Group bugs by changelog type
-    let mut sections: HashMap<ChangelogType, Vec<&Bug>> = HashMap::new();
+    let mut sections: HashMap<ChangelogType, Vec<&Change>> = HashMap::new();
     for bug in bugs {
         if let Some(ct) = bug.changelog_type() {
             // Skip internal changes
@@ -133,7 +133,7 @@ fn generate_changelog_section(bugs: &[Bug], version: &str) -> Result<String> {
 
     for changelog_type in sorted_types {
         if let Some(header) = changelog_type.section_header() {
-            let bugs_in_section: &Vec<&Bug> = sections.get(changelog_type).unwrap();
+            let bugs_in_section: &Vec<&Change> = sections.get(changelog_type).unwrap();
             output.push_str(&format!("### {header}\n\n"));
 
             for bug in bugs_in_section {
@@ -208,7 +208,7 @@ fn find_insertion_point(content: &str) -> usize {
 }
 
 /// Helper to check if a bug should appear in changelog
-pub fn should_include_in_changelog(bug: &Bug) -> bool {
+pub fn should_include_in_changelog(bug: &Change) -> bool {
     match bug.changelog_type() {
         Some(ct) => ct.section_header().is_some(),
         None => false,
@@ -216,8 +216,8 @@ pub fn should_include_in_changelog(bug: &Bug) -> bool {
 }
 
 /// Get bugs that are done but have no version assigned
-pub fn get_unreleased_done_bugs(store: &Store) -> Result<Vec<Bug>> {
-    let bugs = store.list_bugs()?;
+pub fn get_unreleased_done_bugs(store: &Store) -> Result<Vec<Change>> {
+    let bugs = store.list_changes()?;
     Ok(bugs
         .into_iter()
         .filter(|bug| matches!(bug.status(), Status::Done) && bug.versions().is_empty())

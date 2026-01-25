@@ -5,15 +5,15 @@ use docket::cli::{Cli, Commands};
 use docket::commands;
 use docket::workspace;
 
-/// Resolve bug ID from either explicit argument or current workspace.
+/// Resolve change ID from either explicit argument or current workspace.
 /// Returns an error if neither is available.
-fn resolve_bug_id(id: Option<String>) -> Result<String> {
+fn resolve_change_id(id: Option<String>) -> Result<String> {
     match id {
         Some(id) => Ok(id),
-        None => workspace::current_bug_id().ok_or_else(|| {
+        None => workspace::current_change_id().ok_or_else(|| {
             anyhow!(
-                "no bug ID provided and not in a workspace.\n\
-                 Either provide a bug ID or run from a workspace directory (ws-{{id}})."
+                "no change ID provided and not in a workspace.\n\
+                 Either provide a change ID or run from a workspace directory (ws-{{id}})."
             )
         }),
     }
@@ -32,10 +32,13 @@ fn main() -> Result<()> {
             changelog,
             version,
             tag,
+            parent,
             epic,
             edit,
         } => {
             let interactive = title.is_none();
+            // parent takes precedence over epic (epic is legacy alias)
+            let parent_id = parent.or(epic);
             commands::new(
                 title,
                 &priority,
@@ -45,7 +48,7 @@ fn main() -> Result<()> {
                 changelog.as_deref(),
                 version.as_deref(),
                 &tag,
-                epic.as_deref(),
+                parent_id.as_deref(),
                 edit,
             )
         }
@@ -65,6 +68,7 @@ fn main() -> Result<()> {
             tag,
             blocking,
             depends_on,
+            flat,
         } => {
             // --review and --blocked flags are shorthand for --status
             let status_filter = if review {
@@ -88,10 +92,11 @@ fn main() -> Result<()> {
                 tag.as_deref(),
                 blocking,
                 depends_on.as_deref(),
+                flat,
             )
         }
         Commands::Show { id } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::show(&id)
         }
         Commands::Update {
@@ -104,7 +109,7 @@ fn main() -> Result<()> {
             version,
             remove_version,
         } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::update(
                 &id,
                 title,
@@ -122,27 +127,27 @@ fn main() -> Result<()> {
         Commands::Undepend { id, on } => commands::undepend(&id, &on),
         Commands::Approve { id } => commands::approve(&id),
         Commands::Block { id, reason, by } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::block(&id, reason, by)
         }
         Commands::Unblock { id, by } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::unblock(&id, by)
         }
         Commands::Pause { id, reason } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::pause(&id, reason)
         }
         Commands::Resume { id } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::resume(&id)
         }
         Commands::Review { id } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::review(&id)
         }
         Commands::Reject { id } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::reject(&id)
         }
         Commands::Done {
@@ -153,7 +158,7 @@ fn main() -> Result<()> {
             squash,
             submit,
         } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::done(&id, auto, force, describe, squash, submit)
         }
         Commands::Work {
@@ -165,7 +170,7 @@ fn main() -> Result<()> {
         Commands::Cleanup { id } => commands::cleanup(id.as_deref()),
         Commands::Current => commands::current(),
         Commands::Edit { id } => {
-            let id = resolve_bug_id(id)?;
+            let id = resolve_change_id(id)?;
             commands::edit(&id)
         }
         Commands::Sync {
@@ -188,7 +193,7 @@ fn main() -> Result<()> {
         } => {
             // Try to find an existing epic with this ID
             let store = docket::store::Store::open()?;
-            match store.get_bug(&id_or_title) {
+            match store.get_change(&id_or_title) {
                 Ok(bug) if bug.is_epic() => {
                     // It's an existing epic, show details
                     commands::epic_show(&store, &bug)
@@ -207,5 +212,8 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Commands::Scratch { id, content } => commands::scratch(&id, &content),
+        Commands::Reparent { id, parent } => commands::reparent(&id, parent.as_deref()),
+        Commands::Graph { id, all } => commands::graph(id.as_deref(), all),
     }
 }

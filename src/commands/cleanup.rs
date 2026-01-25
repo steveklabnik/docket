@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::store::Store;
 
 /// Main entry point - routes to explicit or auto cleanup
@@ -18,7 +18,7 @@ pub fn cleanup(id: Option<&str>) -> Result<()> {
 /// Clean up a specific workspace by bug ID
 fn cleanup_explicit(id: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
 
     let bug_id = bug.id().to_string();
     cleanup_workspace(&bug_id)
@@ -129,7 +129,7 @@ fn find_workspaces(parent_dir: &Path) -> Result<Vec<String>> {
 
 /// Check if a workspace should be cleaned up (bug is done)
 fn should_cleanup_workspace(bug_id: &str, store: &Store) -> Result<bool> {
-    let bug = store.get_bug(bug_id)?;
+    let bug = store.get_change(bug_id)?;
     Ok(matches!(bug.status(), Status::Done))
 }
 

@@ -1,33 +1,33 @@
-//! Depend command - add a dependency between bugs.
+//! Depend command - add a dependency between changes.
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::event::Event;
 use crate::store::Store;
 
-/// Add a dependency: bug `id` is blocked by bug `blocker_id`.
+/// Add a dependency: change `id` is blocked by change `blocker_id`.
 ///
-/// This creates an inter-bug dependency without changing the bug's status.
+/// This creates an inter-change dependency without changing the change's status.
 /// Use `docket block` to mark external blockers that change status to Blocked.
 pub fn depend(id: &str, blocker_id: &str) -> Result<()> {
     let store = Store::open()?;
 
-    // Resolve both bug IDs
-    let bug = store.get_bug(id)?;
+    // Resolve both change IDs
+    let bug = store.get_change(id)?;
     let blocker_full_id = store.resolve_id(blocker_id)?;
-    let blocker_bug = store.get_bug(&blocker_full_id)?;
+    let blocker_bug = store.get_change(&blocker_full_id)?;
 
     // Prevent self-referential dependency
     if bug.id() == blocker_bug.id() {
-        return Err(anyhow!("a bug cannot depend on itself"));
+        return Err(anyhow!("a change cannot depend on itself"));
     }
 
     // Check if dependency already exists
     if bug.is_blocked_by(&blocker_full_id) {
         return Err(anyhow!(
-            "bug {} already depends on {}",
+            "change {} already depends on {}",
             bug.id(),
             blocker_full_id
         ));
@@ -38,7 +38,7 @@ pub fn depend(id: &str, blocker_id: &str) -> Result<()> {
     store.append_event(&event)?;
 
     println!(
-        "{} Bug {} now depends on {} ({})",
+        "{} Change {} now depends on {} ({})",
         "✓".green(),
         bug.id().cyan(),
         blocker_full_id.cyan(),

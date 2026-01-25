@@ -6,11 +6,15 @@ use crate::store::Store;
 
 pub fn tag(id: &str, tag: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
 
     // Check if the tag already exists
     if bug.has_tag(tag) {
-        bail!("Bug {} already has tag '{}'", bug.id().cyan(), tag.yellow());
+        bail!(
+            "Change {} already has tag '{}'",
+            bug.id().cyan(),
+            tag.yellow()
+        );
     }
 
     // Emit TagAdded event

@@ -1,11 +1,11 @@
 //! Workspace detection and utilities.
 //!
 //! Provides functions to detect if we're inside a workspace directory (ws-{id})
-//! and extract the bug ID from it.
+//! and extract the change ID from it.
 
-/// Extract bug ID from current directory if it's a workspace (ws-{id}).
+/// Extract change ID from current directory if it's a workspace (ws-{id}).
 /// Returns None if not in a workspace directory.
-pub fn current_bug_id() -> Option<String> {
+pub fn current_change_id() -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
     let dir_name = cwd.file_name()?.to_str()?;
 
@@ -21,7 +21,7 @@ pub fn current_bug_id() -> Option<String> {
 
 /// Check if we're inside any workspace directory.
 pub fn is_in_workspace() -> bool {
-    current_bug_id().is_some()
+    current_change_id().is_some()
 }
 
 #[cfg(test)]
@@ -29,9 +29,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_current_bug_id_parsing() {
+    fn test_current_change_id_parsing() {
         // This is tricky to test since it depends on current directory
         // We'll just test the logic manually by checking the return type
-        let _ = current_bug_id();
+        let _ = current_change_id();
     }
 }

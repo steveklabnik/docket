@@ -4,7 +4,7 @@ use dialoguer::{Input, Select};
 use std::fs;
 use std::io::{self, Read};
 
-use crate::bug::{ChangelogType, Priority};
+use crate::change::{ChangelogType, Priority};
 use crate::config::Config;
 use crate::event::Event;
 use crate::store::Store;
@@ -33,21 +33,15 @@ pub fn new(
     changelog_type_str: Option<&str>,
     version: Option<&str>,
     tags: &[String],
-    epic_id: Option<&str>,
+    parent_id: Option<&str>,
     edit: bool,
 ) -> Result<()> {
     let store = Store::open()?;
 
-    // If creating a child, verify the parent epic exists and is actually an epic
-    let parent_epic = if let Some(epic_ref) = epic_id {
-        let epic = store.get_bug(epic_ref)?;
-        if !epic.is_epic() {
-            anyhow::bail!(
-                "bug '{}' is not an epic. Use 'docket epic \"Title\"' to create an epic first.",
-                epic_ref
-            );
-        }
-        Some(epic)
+    // If creating a child, verify the parent change exists
+    let parent_change = if let Some(parent_ref) = parent_id {
+        let parent = store.get_change(parent_ref)?;
+        Some(parent)
     } else {
         None
     };
@@ -55,7 +49,7 @@ pub fn new(
     // Get title interactively if not provided
     let title = match title {
         Some(t) => t,
-        None => Input::new().with_prompt("Bug title").interact_text()?,
+        None => Input::new().with_prompt("Change title").interact_text()?,
     };
 
     // Parse priority - prompt interactively only if in interactive mode and using default
@@ -78,12 +72,9 @@ pub fn new(
         })
     };
 
-    // Generate ID - child ID if under an epic, otherwise regular ID
-    let id = if let Some(ref epic) = parent_epic {
-        store.generate_child_id(epic.id())?
-    } else {
-        store.generate_id()?
-    };
+    // Generate ID - always use regular IDs in the unified model
+    // (hierarchical IDs like abc1.1 are deprecated in favor of flat IDs with parent field)
+    let id = store.generate_id()?;
 
     // Get body from source, template, or default
     let body = if let Some(source) = body_source {
@@ -112,14 +103,14 @@ pub fn new(
     // Start a transaction for atomic multi-event writes
     let mut tx = store.begin_transaction(&id)?;
 
-    // Add Created event (with parent_epic if applicable)
-    let event = if let Some(ref epic) = parent_epic {
-        Event::child_created(
+    // Add Created event (with parent if applicable)
+    let event = if let Some(ref parent) = parent_change {
+        Event::created_with_parent(
             id.clone(),
             title.clone(),
             priority,
             body,
-            epic.id().to_string(),
+            parent.id().to_string(),
         )
     } else {
         Event::created(id.clone(), title.clone(), priority, body)
@@ -153,16 +144,16 @@ pub fn new(
     // Commit all events atomically
     tx.commit()?;
 
-    if let Some(epic) = parent_epic {
+    if let Some(parent) = parent_change {
         println!(
-            "{} Created step {} - {} (under epic {})",
+            "{} Created change {} - {} (under {})",
             "✓".green(),
             id.cyan(),
             title,
-            epic.id().cyan()
+            parent.id().cyan()
         );
     } else {
-        println!("{} Created bug {} - {}", "✓".green(), id.cyan(), title);
+        println!("{} Created change {} - {}", "✓".green(), id.cyan(), title);
         if !tags.is_empty() {
             println!(
                 "  Tags: {}",

@@ -1,22 +1,22 @@
-//! Block command - mark a bug as blocked on external dependency or another bug.
+//! Block command - mark a change as blocked on external dependency or another change.
 
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::event::Event;
 use crate::store::Store;
 
-/// Mark a bug as blocked on external dependency or another bug.
+/// Mark a change as blocked on external dependency or another change.
 ///
-/// If `by` is provided, this adds an inter-bug dependency (bug is blocked by another bug).
-/// If `by` is not provided, this changes the bug's status to Blocked (external blocker).
+/// If `by` is provided, this adds an inter-change dependency (change is blocked by another change).
+/// If `by` is not provided, this changes the change's status to Blocked (external blocker).
 pub fn block(id: &str, reason: Option<String>, by: Option<String>) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
     let bug_id = bug.id().to_string();
 
-    // Handle inter-bug dependency
+    // Handle inter-change dependency
     if let Some(blocker_id) = by {
         return add_dependency(&store, &bug_id, &blocker_id);
     }
@@ -27,8 +27,8 @@ pub fn block(id: &str, reason: Option<String>, by: Option<String>) -> Result<()>
     // Validate transition - can only block from InProgress
     if !matches!(old_status, Status::InProgress) {
         return Err(anyhow!(
-            "can only block bugs that are in-progress.\n\
-             Bug '{}' is currently {}.",
+            "can only block changes that are in-progress.\n\
+             Change '{}' is currently {}.",
             bug_id,
             old_status
         ));
@@ -40,7 +40,7 @@ pub fn block(id: &str, reason: Option<String>, by: Option<String>) -> Result<()>
 
     if let Some(ref reason) = reason {
         println!(
-            "{} Blocked bug {} ({} -> {})",
+            "{} Blocked change {} ({} -> {})",
             "✓".green(),
             bug_id.cyan(),
             format!("{}", old_status).dimmed(),
@@ -49,7 +49,7 @@ pub fn block(id: &str, reason: Option<String>, by: Option<String>) -> Result<()>
         println!("  {} {}", "Reason:".dimmed(), reason);
     } else {
         println!(
-            "{} Blocked bug {} ({} -> {})",
+            "{} Blocked change {} ({} -> {})",
             "✓".green(),
             bug_id.cyan(),
             format!("{}", old_status).dimmed(),
@@ -60,26 +60,26 @@ pub fn block(id: &str, reason: Option<String>, by: Option<String>) -> Result<()>
     Ok(())
 }
 
-/// Add an inter-bug dependency (bug is blocked by another bug).
+/// Add an inter-change dependency (change is blocked by another change).
 fn add_dependency(store: &Store, bug_id: &str, blocker_id: &str) -> Result<()> {
     // Resolve the blocker ID
     let blocker_full_id = store.resolve_id(blocker_id)?;
 
-    // Verify the blocker bug exists
-    let blocker_bug = store.get_bug(&blocker_full_id)?;
+    // Verify the blocker change exists
+    let blocker_bug = store.get_change(&blocker_full_id)?;
 
-    // Get the bug again to check existing dependencies
-    let bug = store.get_bug(bug_id)?;
+    // Get the change again to check existing dependencies
+    let bug = store.get_change(bug_id)?;
 
     // Prevent self-referential dependency
     if bug.id() == blocker_bug.id() {
-        return Err(anyhow!("a bug cannot block itself"));
+        return Err(anyhow!("a change cannot block itself"));
     }
 
     // Check if dependency already exists
     if bug.is_blocked_by(&blocker_full_id) {
         return Err(anyhow!(
-            "bug {} is already blocked by {}",
+            "change {} is already blocked by {}",
             bug.id(),
             blocker_full_id
         ));
@@ -90,7 +90,7 @@ fn add_dependency(store: &Store, bug_id: &str, blocker_id: &str) -> Result<()> {
     store.append_event(&event)?;
 
     println!(
-        "{} Bug {} is now blocked by {} ({})",
+        "{} Change {} is now blocked by {} ({})",
         "✓".green(),
         bug.id().cyan(),
         blocker_full_id.cyan(),

@@ -2,12 +2,12 @@ use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::process::Command;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::commands::epic;
 use crate::config::Config;
 use crate::store::Store;
 
-/// Start working on a bug by creating a jj workspace and launching Claude.
+/// Start working on a change by creating a jj workspace and launching Claude.
 ///
 /// # Claude Flags
 ///
@@ -29,14 +29,14 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
 
     // Load config to merge with CLI flags
     let config = Config::load(store.root())?;
-    let mut bug = store.get_bug(id)?;
+    let mut bug = store.get_change(id)?;
 
-    // If this is an epic, find the next incomplete step to work on
+    // If this is a parent change, find the next incomplete child to work on
     if bug.is_epic() {
         match epic::next_step(&store, bug.id())? {
             Some(next) => {
                 println!(
-                    "{} Epic {} - working on next step: {} - {}",
+                    "{} Parent {} - working on next child: {} - {}",
                     "→".blue(),
                     bug.id().cyan(),
                     next.id().cyan(),
@@ -49,13 +49,13 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
                 let (completed, total) = epic::epic_progress(&store, bug.id())?;
                 if total == 0 {
                     return Err(anyhow!(
-                        "epic {} has no steps yet. Add steps with:\n  docket new \"Step description\" --epic {}",
+                        "change {} has no children yet. Add children with:\n  docket new \"Child description\" --parent {}",
                         bug.id(),
                         bug.id()
                     ));
                 } else {
                     return Err(anyhow!(
-                        "all {} steps of epic {} are already done",
+                        "all {} children of change {} are already done",
                         completed,
                         bug.id()
                     ));
@@ -66,7 +66,7 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
 
     // Warn about unresolved dependencies
     if bug.has_dependencies() {
-        let all_bugs = store.list_bugs()?;
+        let all_bugs = store.list_changes()?;
         let unresolved: Vec<_> = bug
             .blocked_by()
             .iter()
@@ -80,7 +80,7 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
 
         if !unresolved.is_empty() {
             eprintln!(
-                "{} Bug {} has {} unresolved dependenc{}:",
+                "{} Change {} has {} unresolved dependenc{}:",
                 "!".yellow(),
                 bug.id().cyan(),
                 unresolved.len(),
@@ -109,14 +109,14 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         Status::Approved | Status::InProgress => {}
         Status::Draft => {
             eprintln!(
-                "{} Bug {} is still in draft status. Consider approving it first.",
+                "{} Change {} is still in draft status. Consider approving it first.",
                 "!".yellow(),
                 bug.id().cyan()
             );
         }
         Status::Blocked => {
             eprintln!(
-                "{} Bug {} is blocked. Use 'docket unblock {}' to unblock it first.",
+                "{} Change {} is blocked. Use 'docket unblock {}' to unblock it first.",
                 "!".yellow(),
                 bug.id().cyan(),
                 bug.id()
@@ -127,7 +127,7 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         }
         Status::Paused => {
             eprintln!(
-                "{} Bug {} is paused. Use 'docket resume {}' to resume work.",
+                "{} Change {} is paused. Use 'docket resume {}' to resume work.",
                 "!".yellow(),
                 bug.id().cyan(),
                 bug.id()
@@ -138,17 +138,17 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
         }
         Status::Review => {
             eprintln!(
-                "{} Bug {} is in review. Use 'docket reject {}' to return to in-progress first.",
+                "{} Change {} is in review. Use 'docket reject {}' to return to in-progress first.",
                 "!".yellow(),
                 bug.id().cyan(),
                 bug.id()
             );
         }
         Status::Done => {
-            return Err(anyhow!("bug {} is already done", bug.id()));
+            return Err(anyhow!("change {} is already done", bug.id()));
         }
         Status::NotPlanned => {
-            return Err(anyhow!("bug {} was closed as not-planned", bug.id()));
+            return Err(anyhow!("change {} was closed as not-planned", bug.id()));
         }
     }
 
@@ -257,7 +257,7 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
     let status = Command::new("claude")
         .current_dir(&workspace_path)
         .args(&claude_args)
-        .env("DOCKET_BUG", &bug_id)
+        .env("DOCKET_CHANGE", &bug_id)
         .status()
         .context("failed to launch claude")?;
 

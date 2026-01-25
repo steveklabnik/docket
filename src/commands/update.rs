@@ -3,7 +3,7 @@ use colored::Colorize;
 use std::fs;
 use std::io::{self, Read};
 
-use crate::bug::{ChangelogType, Priority, Status};
+use crate::change::{ChangelogType, Priority, Status};
 use crate::event::Event;
 use crate::store::Store;
 
@@ -58,7 +58,7 @@ pub fn update(
     remove_version: Option<&str>,
 ) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
     let bug_id = bug.metadata.id.clone();
 
     // Parse priority if provided

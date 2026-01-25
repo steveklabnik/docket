@@ -3,52 +3,52 @@ use chrono::Utc;
 use colored::Colorize;
 use std::cmp::Ordering;
 
-use crate::bug::{Bug, Priority, Status};
+use crate::change::{Change, Priority, Status};
 use crate::commands::epic;
 use crate::store::Store;
 
-/// Show the highest priority approved bugs ready for work.
+/// Show the highest priority approved changes ready for work.
 ///
-/// Filters to only Approved status bugs that have no unresolved dependencies,
+/// Filters to only Approved status changes that have no unresolved dependencies,
 /// then sorts by:
 /// 1. Priority (High > Medium > Low)
 /// 2. Created date (oldest first within same priority)
 ///
-/// For epics, shows the next incomplete step if it's approved and unblocked.
+/// For parent changes, shows the next incomplete child if it's approved and unblocked.
 pub fn ready(count: usize, work: bool) -> Result<()> {
     let store = Store::open()?;
-    let bugs = store.list_bugs()?;
+    let bugs = store.list_changes()?;
 
-    // Build list of ready items, handling epics specially
-    let mut approved: Vec<Bug> = Vec::new();
+    // Build list of ready items, handling parent changes specially
+    let mut approved: Vec<Change> = Vec::new();
 
     for bug in &bugs {
         if bug.is_epic() {
-            // For epics, check if the next step is approved and unblocked
+            // For parent changes, check if the next child is approved and unblocked
             if let Ok(Some(next)) = epic::next_step(&store, bug.id()) {
                 if matches!(next.status(), Status::Approved)
                     && !has_unresolved_dependencies(&next, &bugs)
                 {
-                    // Include the child step (not the epic itself)
+                    // Include the child (not the parent itself)
                     approved.push(next);
                 }
             }
         } else if !bug.is_child() {
-            // Regular bugs (not epic children) - include if approved and unblocked
+            // Leaf changes (not children) - include if approved and unblocked
             if matches!(bug.status(), Status::Approved) && !has_unresolved_dependencies(bug, &bugs)
             {
                 approved.push(bug.clone());
             }
         }
-        // Note: epic children are handled via their parent epic above,
+        // Note: children are handled via their parent above,
         // so we don't add them directly here to avoid duplicates
     }
 
     if approved.is_empty() {
-        println!("{}", "No approved bugs ready for work.".dimmed());
+        println!("{}", "No approved changes ready for work.".dimmed());
         println!(
             "{}",
-            "Run 'docket list --status draft' to see bugs awaiting approval.".dimmed()
+            "Run 'docket list --status draft' to see changes awaiting approval.".dimmed()
         );
         return Ok(());
     }
@@ -85,9 +85,9 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
         let bug = &to_show[0];
         let age = format_age(bug);
 
-        // Show epic context for child bugs
+        // Show parent context for child changes
         let epic_context = if let Some(parent_id) = bug.parent_epic() {
-            if let Ok(parent) = store.get_bug(parent_id) {
+            if let Ok(parent) = store.get_change(parent_id) {
                 let (completed, total) = epic::epic_progress(&store, parent_id).unwrap_or((0, 0));
                 format!(" (step of {} [{}/{}])", parent.title(), completed, total)
             } else {
@@ -111,7 +111,7 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
         for (i, bug) in to_show.iter().enumerate() {
             let age = format_age_short(bug);
 
-            // Show epic context for child bugs
+            // Show parent context for child changes
             let epic_info = if let Some(parent_id) = bug.parent_epic() {
                 format!(" [{}]", parent_id)
             } else {
@@ -133,8 +133,8 @@ pub fn ready(count: usize, work: bool) -> Result<()> {
     Ok(())
 }
 
-/// Format the age of a bug as a human-readable string (e.g., "3 days ago")
-fn format_age(bug: &Bug) -> String {
+/// Format the age of a change as a human-readable string (e.g., "3 days ago")
+fn format_age(bug: &Change) -> String {
     let now = Utc::now();
     let created = bug.created();
     let duration = now.signed_duration_since(created);
@@ -156,8 +156,8 @@ fn format_age(bug: &Bug) -> String {
     }
 }
 
-/// Format the age of a bug as a short string (e.g., "3 days")
-fn format_age_short(bug: &Bug) -> String {
+/// Format the age of a change as a short string (e.g., "3 days")
+fn format_age_short(bug: &Change) -> String {
     let now = Utc::now();
     let created = bug.created();
     let duration = now.signed_duration_since(created);
@@ -189,8 +189,8 @@ fn format_priority(priority: &Priority) -> colored::ColoredString {
     }
 }
 
-/// Check if a bug has unresolved dependencies (dependencies that are not Done)
-fn has_unresolved_dependencies(bug: &Bug, all_bugs: &[Bug]) -> bool {
+/// Check if a change has unresolved dependencies (dependencies that are not Done)
+fn has_unresolved_dependencies(bug: &Change, all_bugs: &[Change]) -> bool {
     if !bug.has_dependencies() {
         return false;
     }

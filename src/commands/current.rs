@@ -6,7 +6,7 @@ use crate::workspace;
 
 /// Print the current workspace's bug ID.
 pub fn current() -> Result<()> {
-    match workspace::current_bug_id() {
+    match workspace::current_change_id() {
         Some(id) => {
             println!("{}", id);
             Ok(())

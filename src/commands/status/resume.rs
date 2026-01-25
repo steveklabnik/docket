@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Result};
 use colored::Colorize;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::event::Event;
 use crate::store::Store;
 
@@ -12,7 +12,7 @@ use crate::store::Store;
 /// This transitions a bug from Paused back to InProgress status.
 pub fn resume(id: &str) -> Result<()> {
     let store = Store::open()?;
-    let bug = store.get_bug(id)?;
+    let bug = store.get_change(id)?;
     let bug_id = bug.id().to_string();
 
     let old_status = bug.status().clone();

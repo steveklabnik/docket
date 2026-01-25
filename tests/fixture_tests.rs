@@ -1,5 +1,5 @@
-use docket::bug::{Priority, Status};
-use docket::event::{derive_bug, read_events};
+use docket::change::{Priority, Status};
+use docket::event::{derive_change, read_events};
 use std::path::PathBuf;
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -15,7 +15,7 @@ fn simple_bug_fixture() {
 
     assert_eq!(events.len(), 1);
 
-    let bug = derive_bug(&events).unwrap();
+    let bug = derive_change(&events).unwrap();
 
     assert_eq!(bug.metadata.id, "abc1");
     assert_eq!(bug.metadata.title, "Simple test bug");
@@ -32,7 +32,7 @@ fn completed_bug_fixture() {
     // 5 events: created + 3 status changes + 1 deprecated change_linked (ignored)
     assert_eq!(events.len(), 5);
 
-    let bug = derive_bug(&events).unwrap();
+    let bug = derive_change(&events).unwrap();
 
     assert_eq!(bug.metadata.id, "done");
     assert_eq!(bug.metadata.title, "Completed bug example");
@@ -47,7 +47,7 @@ fn updated_bug_fixture() {
 
     assert_eq!(events.len(), 4);
 
-    let bug = derive_bug(&events).unwrap();
+    let bug = derive_change(&events).unwrap();
 
     assert_eq!(bug.metadata.id, "updt");
     assert_eq!(bug.metadata.title, "Updated title");

@@ -6,11 +6,12 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
-use crate::bug::Bug;
+use crate::change::Change;
 use crate::event::{self, Event};
 
 const DOCKET_DIR: &str = ".docket";
-const BUGS_DIR: &str = "bugs";
+const CHANGES_DIR: &str = "changes";
+const LEGACY_BUGS_DIR: &str = "bugs";
 const ID_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const ID_LENGTH: usize = 4;
 
@@ -32,7 +33,10 @@ impl Store {
         loop {
             let docket_path = current.join(DOCKET_DIR);
             if docket_path.is_dir() {
-                return Ok(Store { root: docket_path });
+                let store = Store { root: docket_path };
+                // Migrate from legacy bugs/ directory if needed
+                store.migrate_bugs_to_changes()?;
+                return Ok(store);
             }
 
             if !current.pop() {
@@ -58,9 +62,9 @@ impl Store {
             return Err(anyhow!("docket already initialized at {}", root.display()));
         }
 
-        let bugs_dir = root.join(BUGS_DIR);
-        fs::create_dir_all(&bugs_dir)
-            .with_context(|| format!("failed to create {}", bugs_dir.display()))?;
+        let changes_dir = root.join(CHANGES_DIR);
+        fs::create_dir_all(&changes_dir)
+            .with_context(|| format!("failed to create {}", changes_dir.display()))?;
 
         // Create .gitignore for cache directory
         let gitignore_path = root.join(".gitignore");
@@ -70,56 +74,101 @@ impl Store {
         Ok(Store { root })
     }
 
-    /// Path to the bugs directory
-    fn bugs_dir(&self) -> PathBuf {
-        self.root.join(BUGS_DIR)
+    /// Migrate from legacy .docket/bugs/ directory to .docket/changes/
+    fn migrate_bugs_to_changes(&self) -> Result<()> {
+        let legacy_dir = self.root.join(LEGACY_BUGS_DIR);
+        let new_dir = self.root.join(CHANGES_DIR);
+
+        // If legacy directory doesn't exist, nothing to migrate
+        if !legacy_dir.exists() {
+            return Ok(());
+        }
+
+        // If new directory already exists with content, don't migrate
+        if new_dir.exists() && new_dir.read_dir()?.next().is_some() {
+            return Ok(());
+        }
+
+        // Create new directory if needed
+        fs::create_dir_all(&new_dir)
+            .with_context(|| format!("failed to create {}", new_dir.display()))?;
+
+        // Move all contents from legacy to new directory
+        for entry in fs::read_dir(&legacy_dir)? {
+            let entry = entry?;
+            let old_path = entry.path();
+            let file_name = entry.file_name();
+            let new_path = new_dir.join(&file_name);
+
+            fs::rename(&old_path, &new_path).with_context(|| {
+                format!(
+                    "failed to migrate {} to {}",
+                    old_path.display(),
+                    new_path.display()
+                )
+            })?;
+        }
+
+        // Remove the now-empty legacy directory
+        fs::remove_dir(&legacy_dir).with_context(|| {
+            format!("failed to remove legacy directory {}", legacy_dir.display())
+        })?;
+
+        eprintln!("Migrated change data from .docket/bugs/ to .docket/changes/");
+
+        Ok(())
     }
 
-    /// Get the shard key (first character) for a bug ID
+    /// Path to the changes directory
+    fn changes_dir(&self) -> PathBuf {
+        self.root.join(CHANGES_DIR)
+    }
+
+    /// Get the shard key (first character) for a change ID
     fn shard_key(id: &str) -> Option<char> {
         id.chars().next()
     }
 
-    /// Path to a specific bug's event log file (sharded structure)
-    /// Returns the sharded path: .docket/bugs/{first_char}/{id}.jsonl
-    fn bug_path(&self, id: &str) -> PathBuf {
+    /// Path to a specific change's event log file (sharded structure)
+    /// Returns the sharded path: .docket/changes/{first_char}/{id}.jsonl
+    fn change_path(&self, id: &str) -> PathBuf {
         if let Some(shard) = Self::shard_key(id) {
-            self.bugs_dir()
+            self.changes_dir()
                 .join(shard.to_string())
                 .join(format!("{}.jsonl", id))
         } else {
             // Fallback for empty ID (shouldn't happen in practice)
-            self.bugs_dir().join(format!("{}.jsonl", id))
+            self.changes_dir().join(format!("{}.jsonl", id))
         }
     }
 
-    /// Path to the legacy flat location for a bug
-    fn bug_path_flat(&self, id: &str) -> PathBuf {
-        self.bugs_dir().join(format!("{}.jsonl", id))
+    /// Path to the legacy flat location for a change
+    fn change_path_flat(&self, id: &str) -> PathBuf {
+        self.changes_dir().join(format!("{}.jsonl", id))
     }
 
-    /// Find the actual path where a bug file exists
+    /// Find the actual path where a change file exists
     /// Checks sharded path first, then falls back to flat path for backward compatibility
-    fn find_bug_path(&self, id: &str) -> Option<PathBuf> {
-        let sharded = self.bug_path(id);
+    fn find_change_path(&self, id: &str) -> Option<PathBuf> {
+        let sharded = self.change_path(id);
         if sharded.exists() {
             return Some(sharded);
         }
-        let flat = self.bug_path_flat(id);
+        let flat = self.change_path_flat(id);
         if flat.exists() {
             return Some(flat);
         }
         None
     }
 
-    /// Migrate a bug file from flat to sharded structure if needed
+    /// Migrate a change file from flat to sharded structure if needed
     fn migrate_to_sharded(&self, id: &str) -> Result<()> {
-        let flat_path = self.bug_path_flat(id);
+        let flat_path = self.change_path_flat(id);
         if !flat_path.exists() {
             return Ok(()); // Nothing to migrate
         }
 
-        let sharded_path = self.bug_path(id);
+        let sharded_path = self.change_path(id);
         if sharded_path.exists() {
             return Ok(()); // Already migrated
         }
@@ -143,23 +192,23 @@ impl Store {
         Ok(())
     }
 
-    /// List all bugs (searches both sharded and flat structures)
-    pub fn list_bugs(&self) -> Result<Vec<Bug>> {
-        let bugs_dir = self.bugs_dir();
+    /// List all changes (searches both sharded and flat structures)
+    pub fn list_changes(&self) -> Result<Vec<Change>> {
+        let changes_dir = self.changes_dir();
 
-        // Pattern for sharded structure: .docket/bugs/*/*.jsonl
-        let sharded_pattern = bugs_dir.join("*").join("*.jsonl");
+        // Pattern for sharded structure: .docket/changes/*/*.jsonl
+        let sharded_pattern = changes_dir.join("*").join("*.jsonl");
         let sharded_pattern_str = sharded_pattern
             .to_str()
             .ok_or_else(|| anyhow!("invalid path encoding"))?;
 
-        // Pattern for flat structure (backward compat): .docket/bugs/*.jsonl
-        let flat_pattern = bugs_dir.join("*.jsonl");
+        // Pattern for flat structure (backward compat): .docket/changes/*.jsonl
+        let flat_pattern = changes_dir.join("*.jsonl");
         let flat_pattern_str = flat_pattern
             .to_str()
             .ok_or_else(|| anyhow!("invalid path encoding"))?;
 
-        let mut bugs = Vec::new();
+        let mut changes = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
 
         // Search sharded structure first
@@ -167,14 +216,14 @@ impl Store {
             let path = entry?;
             let events = event::read_events(&path)?;
 
-            match event::derive_bug(&events) {
-                Ok(bug) => {
-                    seen_ids.insert(bug.id().to_string());
-                    bugs.push(bug);
+            match event::derive_change(&events) {
+                Ok(change) => {
+                    seen_ids.insert(change.id().to_string());
+                    changes.push(change);
                 }
                 Err(e) => {
                     eprintln!(
-                        "warning: failed to derive bug from {}: {}",
+                        "warning: failed to derive change from {}: {}",
                         path.display(),
                         e
                     );
@@ -182,21 +231,21 @@ impl Store {
             }
         }
 
-        // Search flat structure for any bugs not yet migrated
+        // Search flat structure for any changes not yet migrated
         for entry in glob::glob(flat_pattern_str)? {
             let path = entry?;
             let events = event::read_events(&path)?;
 
-            match event::derive_bug(&events) {
-                Ok(bug) => {
+            match event::derive_change(&events) {
+                Ok(change) => {
                     // Only add if not already found in sharded structure
-                    if !seen_ids.contains(bug.id()) {
-                        bugs.push(bug);
+                    if !seen_ids.contains(change.id()) {
+                        changes.push(change);
                     }
                 }
                 Err(e) => {
                     eprintln!(
-                        "warning: failed to derive bug from {}: {}",
+                        "warning: failed to derive change from {}: {}",
                         path.display(),
                         e
                     );
@@ -205,21 +254,21 @@ impl Store {
         }
 
         // Sort by created date, newest first
-        bugs.sort_by(|a, b| b.metadata.created.cmp(&a.metadata.created));
+        changes.sort_by(|a, b| b.metadata.created.cmp(&a.metadata.created));
 
-        Ok(bugs)
+        Ok(changes)
     }
 
-    /// Get a specific bug by ID (supports prefix and fuzzy matching)
-    pub fn get_bug(&self, id: &str) -> Result<Bug> {
+    /// Get a specific change by ID (supports prefix and fuzzy matching)
+    pub fn get_change(&self, id: &str) -> Result<Change> {
         // First try exact match (checks sharded then flat)
-        if let Some(path) = self.find_bug_path(id) {
+        if let Some(path) = self.find_change_path(id) {
             let events = event::read_events(&path)?;
-            return event::derive_bug(&events);
+            return event::derive_change(&events);
         }
 
         // Try prefix match in both structures
-        let prefix_matches = self.find_matching_bugs(id)?;
+        let prefix_matches = self.find_matching_changes(id)?;
 
         match prefix_matches.len() {
             0 => {
@@ -227,22 +276,22 @@ impl Store {
                 let fuzzy_matches = self.find_fuzzy_matches(id)?;
                 match fuzzy_matches.len() {
                     0 => Err(anyhow!(
-                        "bug not found: '{}'\n\
-                         Run 'docket list' to see all bugs, or 'docket new' to create one.",
+                        "change not found: '{}'\n\
+                         Run 'docket list' to see all changes, or 'docket new' to create one.",
                         id
                     )),
                     1 => {
                         let path = self
-                            .find_bug_path(&fuzzy_matches[0])
+                            .find_change_path(&fuzzy_matches[0])
                             .ok_or_else(|| anyhow!("internal error: fuzzy match path not found"))?;
                         let events = event::read_events(&path)?;
-                        event::derive_bug(&events)
+                        event::derive_change(&events)
                     }
                     _ => {
                         // Check if top matches have the same score (truly ambiguous)
                         // For now, just report ambiguity with all fuzzy matches
                         Err(anyhow!(
-                            "ambiguous bug ID '{}', fuzzy matches: {}",
+                            "ambiguous change ID '{}', fuzzy matches: {}",
                             id,
                             fuzzy_matches.join(", ")
                         ))
@@ -251,7 +300,7 @@ impl Store {
             }
             1 => {
                 let events = event::read_events(&prefix_matches[0])?;
-                event::derive_bug(&events)
+                event::derive_change(&events)
             }
             _ => {
                 let ids: Vec<_> = prefix_matches
@@ -260,7 +309,7 @@ impl Store {
                     .filter_map(|s| s.to_str())
                     .collect();
                 Err(anyhow!(
-                    "ambiguous bug ID '{}', matches: {}",
+                    "ambiguous change ID '{}', matches: {}",
                     id,
                     ids.join(", ")
                 ))
@@ -268,14 +317,14 @@ impl Store {
         }
     }
 
-    /// Find all bug files matching a prefix (searches both sharded and flat structures)
-    fn find_matching_bugs(&self, prefix: &str) -> Result<Vec<PathBuf>> {
-        let bugs_dir = self.bugs_dir();
+    /// Find all change files matching a prefix (searches both sharded and flat structures)
+    fn find_matching_changes(&self, prefix: &str) -> Result<Vec<PathBuf>> {
+        let changes_dir = self.changes_dir();
         let mut matches = Vec::new();
         let mut seen_stems = std::collections::HashSet::new();
 
-        // Search sharded structure: .docket/bugs/*/{prefix}*.jsonl
-        let sharded_pattern = bugs_dir.join("*").join(format!("{}*.jsonl", prefix));
+        // Search sharded structure: .docket/changes/*/{prefix}*.jsonl
+        let sharded_pattern = changes_dir.join("*").join(format!("{}*.jsonl", prefix));
         if let Some(pattern_str) = sharded_pattern.to_str() {
             for entry in glob::glob(pattern_str)? {
                 let path = entry?;
@@ -286,8 +335,8 @@ impl Store {
             }
         }
 
-        // Search flat structure: .docket/bugs/{prefix}*.jsonl
-        let flat_pattern = bugs_dir.join(format!("{}*.jsonl", prefix));
+        // Search flat structure: .docket/changes/{prefix}*.jsonl
+        let flat_pattern = changes_dir.join(format!("{}*.jsonl", prefix));
         if let Some(pattern_str) = flat_pattern.to_str() {
             for entry in glob::glob(pattern_str)? {
                 let path = entry?;
@@ -303,14 +352,14 @@ impl Store {
         Ok(matches)
     }
 
-    /// Find all bug IDs in the repository (for fuzzy matching)
-    fn list_all_bug_ids(&self) -> Result<Vec<String>> {
-        let bugs_dir = self.bugs_dir();
+    /// Find all change IDs in the repository (for fuzzy matching)
+    fn list_all_change_ids(&self) -> Result<Vec<String>> {
+        let changes_dir = self.changes_dir();
         let mut ids = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        // Search sharded structure: .docket/bugs/*/*.jsonl
-        let sharded_pattern = bugs_dir.join("*").join("*.jsonl");
+        // Search sharded structure: .docket/changes/*/*.jsonl
+        let sharded_pattern = changes_dir.join("*").join("*.jsonl");
         if let Some(pattern_str) = sharded_pattern.to_str() {
             for entry in glob::glob(pattern_str)? {
                 let path = entry?;
@@ -322,8 +371,8 @@ impl Store {
             }
         }
 
-        // Search flat structure: .docket/bugs/*.jsonl
-        let flat_pattern = bugs_dir.join("*.jsonl");
+        // Search flat structure: .docket/changes/*.jsonl
+        let flat_pattern = changes_dir.join("*.jsonl");
         if let Some(pattern_str) = flat_pattern.to_str() {
             for entry in glob::glob(pattern_str)? {
                 let path = entry?;
@@ -338,10 +387,10 @@ impl Store {
         Ok(ids)
     }
 
-    /// Find bugs using fuzzy matching
-    /// Returns bug IDs sorted by match score (best match first)
+    /// Find changes using fuzzy matching
+    /// Returns change IDs sorted by match score (best match first)
     fn find_fuzzy_matches(&self, query: &str) -> Result<Vec<String>> {
-        let all_ids = self.list_all_bug_ids()?;
+        let all_ids = self.list_all_change_ids()?;
         let matcher = SkimMatcherV2::default();
 
         let mut scored: Vec<(String, i64)> = all_ids
@@ -355,14 +404,14 @@ impl Store {
         Ok(scored.into_iter().map(|(id, _)| id).collect())
     }
 
-    /// Append an event to a bug's event log
-    /// If the bug exists in flat structure, migrates it to sharded first
+    /// Append an event to a change's event log
+    /// If the change exists in flat structure, migrates it to sharded first
     pub fn append_event(&self, event: &Event) -> Result<()> {
         // Migrate from flat to sharded if needed
-        self.migrate_to_sharded(&event.bug_id)?;
+        self.migrate_to_sharded(&event.change_id)?;
 
         // Get the sharded path and ensure directory exists
-        let path = self.bug_path(&event.bug_id);
+        let path = self.change_path(&event.change_id);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create directory {}", parent.display()))?;
@@ -371,27 +420,27 @@ impl Store {
         event::append_event(&path, event)
     }
 
-    /// Get all events for a bug
+    /// Get all events for a change
     pub fn get_events(&self, id: &str) -> Result<Vec<Event>> {
-        let path = self.find_bug_path(id).ok_or_else(|| {
+        let path = self.find_change_path(id).ok_or_else(|| {
             anyhow!(
-                "bug not found: '{}'\n\
-                 Run 'docket list' to see all bugs.",
+                "change not found: '{}'\n\
+                 Run 'docket list' to see all changes.",
                 id
             )
         })?;
         event::read_events(&path)
     }
 
-    /// Resolve a bug ID prefix to the full ID (supports prefix and fuzzy matching)
+    /// Resolve a change ID prefix to the full ID (supports prefix and fuzzy matching)
     pub fn resolve_id(&self, id: &str) -> Result<String> {
         // First try exact match (checks sharded then flat)
-        if self.find_bug_path(id).is_some() {
+        if self.find_change_path(id).is_some() {
             return Ok(id.to_string());
         }
 
         // Try prefix match in both structures
-        let prefix_matches = self.find_matching_bugs(id)?;
+        let prefix_matches = self.find_matching_changes(id)?;
 
         match prefix_matches.len() {
             0 => {
@@ -399,13 +448,13 @@ impl Store {
                 let fuzzy_matches = self.find_fuzzy_matches(id)?;
                 match fuzzy_matches.len() {
                     0 => Err(anyhow!(
-                        "bug not found: '{}'\n\
-                         Run 'docket list' to see all bugs.",
+                        "change not found: '{}'\n\
+                         Run 'docket list' to see all changes.",
                         id
                     )),
                     1 => Ok(fuzzy_matches[0].clone()),
                     _ => Err(anyhow!(
-                        "ambiguous bug ID '{}', fuzzy matches: {}",
+                        "ambiguous change ID '{}', fuzzy matches: {}",
                         id,
                         fuzzy_matches.join(", ")
                     )),
@@ -425,7 +474,7 @@ impl Store {
                     .filter_map(|s| s.to_str())
                     .collect();
                 Err(anyhow!(
-                    "ambiguous bug ID '{}', matches: {}",
+                    "ambiguous change ID '{}', matches: {}",
                     id,
                     ids.join(", ")
                 ))
@@ -433,7 +482,7 @@ impl Store {
         }
     }
 
-    /// Generate a unique bug ID
+    /// Generate a unique change ID
     pub fn generate_id(&self) -> Result<String> {
         let mut rng = rand::thread_rng();
 
@@ -447,7 +496,7 @@ impl Store {
                 .collect();
 
             // Check both sharded and flat paths to ensure uniqueness
-            if self.find_bug_path(&id).is_none() {
+            if self.find_change_path(&id).is_none() {
                 return Ok(id);
             }
         }
@@ -457,7 +506,7 @@ impl Store {
 
     /// Generate the next child ID for an epic (e.g., abc1.1, abc1.2, abc1.3)
     pub fn generate_child_id(&self, parent_id: &str) -> Result<String> {
-        let bugs_dir = self.bugs_dir();
+        let changes_dir = self.changes_dir();
 
         // Find existing children in both sharded and flat structures
         let mut max_num: u32 = 0;
@@ -469,8 +518,8 @@ impl Store {
             num_str.parse::<u32>().ok()
         };
 
-        // Search sharded structure: .docket/bugs/*/{parent_id}.*.jsonl
-        let sharded_pattern = bugs_dir.join("*").join(format!("{}.*.jsonl", parent_id));
+        // Search sharded structure: .docket/changes/*/{parent_id}.*.jsonl
+        let sharded_pattern = changes_dir.join("*").join(format!("{}.*.jsonl", parent_id));
         if let Some(pattern_str) = sharded_pattern.to_str() {
             for path in glob::glob(pattern_str)?.flatten() {
                 if let Some(num) = extract_num(&path) {
@@ -479,8 +528,8 @@ impl Store {
             }
         }
 
-        // Search flat structure: .docket/bugs/{parent_id}.*.jsonl
-        let flat_pattern = bugs_dir.join(format!("{}.*.jsonl", parent_id));
+        // Search flat structure: .docket/changes/{parent_id}.*.jsonl
+        let flat_pattern = changes_dir.join(format!("{}.*.jsonl", parent_id));
         if let Some(pattern_str) = flat_pattern.to_str() {
             for path in glob::glob(pattern_str)?.flatten() {
                 if let Some(num) = extract_num(&path) {
@@ -514,32 +563,32 @@ impl Store {
         Some(parent.to_path_buf())
     }
 
-    /// Check if a workspace directory exists for a given bug ID
-    pub fn has_workspace(&self, bug_id: &str) -> bool {
+    /// Check if a workspace directory exists for a given change ID
+    pub fn has_workspace(&self, change_id: &str) -> bool {
         if let Some(workspaces_dir) = self.workspaces_dir() {
-            let ws_path = workspaces_dir.join(format!("ws-{}", bug_id));
+            let ws_path = workspaces_dir.join(format!("ws-{}", change_id));
             ws_path.is_dir()
         } else {
             false
         }
     }
 
-    /// Get the workspace name for a bug ID if it exists
-    pub fn workspace_name(&self, bug_id: &str) -> Option<String> {
-        if self.has_workspace(bug_id) {
-            Some(format!("ws-{}", bug_id))
+    /// Get the workspace name for a change ID if it exists
+    pub fn workspace_name(&self, change_id: &str) -> Option<String> {
+        if self.has_workspace(change_id) {
+            Some(format!("ws-{}", change_id))
         } else {
             None
         }
     }
 
     /// Begin a transaction for atomic multi-event writes
-    pub fn begin_transaction(&self, bug_id: &str) -> Result<Transaction> {
+    pub fn begin_transaction(&self, change_id: &str) -> Result<Transaction> {
         // Migrate from flat to sharded if needed
-        self.migrate_to_sharded(bug_id)?;
+        self.migrate_to_sharded(change_id)?;
 
         // Get the sharded path and ensure directory exists
-        let path = self.bug_path(bug_id);
+        let path = self.change_path(change_id);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create directory {}", parent.display()))?;
@@ -548,13 +597,13 @@ impl Store {
         Transaction::new(path)
     }
 
-    /// Recover a potentially corrupted bug file
+    /// Recover a potentially corrupted change file
     /// Returns the number of events that were recovered (excluding corrupted lines)
-    pub fn recover_bug(&self, id: &str) -> Result<RecoveryResult> {
-        let path = self.find_bug_path(id).ok_or_else(|| {
+    pub fn recover_change(&self, id: &str) -> Result<RecoveryResult> {
+        let path = self.find_change_path(id).ok_or_else(|| {
             anyhow!(
-                "bug not found: '{}'\n\
-                 Run 'docket list' to see all bugs.",
+                "change not found: '{}'\n\
+                 Run 'docket list' to see all changes.",
                 id
             )
         })?;
@@ -580,7 +629,7 @@ pub struct RecoveryResult {
 /// This ensures that either all events are written or none are, preventing
 /// inconsistent state from crashes between event writes.
 pub struct Transaction {
-    /// Path to the bug's event log file
+    /// Path to the change's event log file
     path: PathBuf,
     /// Events to append
     events: Vec<Event>,
@@ -641,10 +690,12 @@ impl Transaction {
         }
 
         // Create temp file in same directory (required for atomic rename)
-        let parent = self
-            .path
-            .parent()
-            .ok_or_else(|| anyhow!("bug path has no parent directory: {}", self.path.display()))?;
+        let parent = self.path.parent().ok_or_else(|| {
+            anyhow!(
+                "change path has no parent directory: {}",
+                self.path.display()
+            )
+        })?;
 
         let temp_path = parent.join(format!(
             ".{}.tmp.{}",
@@ -774,7 +825,7 @@ fn recover_file(path: &Path) -> Result<RecoveryResult> {
         // Use the same atomic write pattern
         let parent = path
             .parent()
-            .ok_or_else(|| anyhow!("bug path has no parent directory: {}", path.display()))?;
+            .ok_or_else(|| anyhow!("change path has no parent directory: {}", path.display()))?;
 
         let temp_path = parent.join(format!(
             ".{}.recovery.{}",
@@ -817,7 +868,7 @@ fn recover_file(path: &Path) -> Result<RecoveryResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bug::Priority;
+    use crate::change::Priority;
     use crate::event::Event;
 
     #[test]
@@ -829,7 +880,7 @@ mod tests {
 
         let event1 = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );
@@ -856,7 +907,7 @@ mod tests {
         // Write initial event directly
         let initial_event = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );
@@ -886,7 +937,7 @@ mod tests {
         // Write initial event
         let initial_event = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );
@@ -914,7 +965,7 @@ mod tests {
 
         let event = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );
@@ -935,7 +986,7 @@ mod tests {
         // Write valid events
         let event1 = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );
@@ -958,7 +1009,7 @@ mod tests {
         // Write a valid event
         let event = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );
@@ -1000,7 +1051,7 @@ mod tests {
         // Write initial event
         let initial_event = Event::created(
             "abc1".to_string(),
-            "Test Bug".to_string(),
+            "Test Change".to_string(),
             Priority::Medium,
             "Body".to_string(),
         );

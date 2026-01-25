@@ -33,7 +33,7 @@ mod init_command {
             .stdout(predicate::str::contains("Initialized docket"));
 
         assert!(dir.path().join(".docket").exists());
-        assert!(dir.path().join(".docket/bugs").exists());
+        assert!(dir.path().join(".docket/changes").exists());
     }
 
     #[test]
@@ -61,10 +61,10 @@ mod new_command {
             .args(["new", "--title", "Test bug title"])
             .assert()
             .success()
-            .stdout(predicate::str::contains("Created bug"));
+            .stdout(predicate::str::contains("Created change"));
 
         // Verify a .jsonl file was created
-        let bugs_dir = dir.path().join(".docket/bugs");
+        let bugs_dir = dir.path().join(".docket/changes");
         let entries: Vec<_> = fs::read_dir(&bugs_dir).unwrap().collect();
         assert_eq!(entries.len(), 1);
     }
@@ -135,7 +135,7 @@ mod list_command {
             .arg("list")
             .assert()
             .success()
-            .stdout(predicate::str::contains("No bugs found"));
+            .stdout(predicate::str::contains("No changes found"));
     }
 
     #[test]
@@ -904,23 +904,23 @@ mod ready_command {
     }
 
     #[test]
-    fn ready_shows_no_bugs_when_none_approved() {
+    fn ready_shows_no_changes_when_none_approved() {
         let dir = setup_docket_repo();
 
-        // Create a draft bug
+        // Create a draft change
         docket_cmd()
             .current_dir(dir.path())
-            .args(["new", "--title", "Draft bug"])
+            .args(["new", "--title", "Draft change"])
             .assert()
             .success();
 
-        // Ready should show no bugs
+        // Ready should show no changes
         docket_cmd()
             .current_dir(dir.path())
             .arg("ready")
             .assert()
             .success()
-            .stdout(predicate::str::contains("No approved bugs"));
+            .stdout(predicate::str::contains("No approved changes"));
     }
 
     #[test]
@@ -1064,6 +1064,6 @@ mod ready_command {
             .arg("ready")
             .assert()
             .success()
-            .stdout(predicate::str::contains("No approved bugs"));
+            .stdout(predicate::str::contains("No approved changes"));
     }
 }

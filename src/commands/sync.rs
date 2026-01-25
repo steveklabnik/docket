@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::bug::Status;
+use crate::change::Status;
 use crate::store::Store;
 
 /// Result of syncing a single workspace
@@ -163,7 +163,7 @@ fn find_workspaces_to_sync(
         // Check if bug exists and is in syncable state
         // Include Draft bugs since they may have active PRs
         // Include Blocked bugs since they still have active workspaces
-        match store.get_bug(bug_id) {
+        match store.get_change(bug_id) {
             Ok(bug) => match bug.status() {
                 Status::InProgress
                 | Status::Approved

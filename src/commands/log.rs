@@ -205,6 +205,36 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    {} -> {}", "paused".cyan(), "in-progress".yellow());
             }
+            EventData::ParentChanged {
+                old_parent,
+                new_parent,
+            } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "parent_changed".magenta(),
+                    actor.dimmed()
+                );
+                let old_str = old_parent.as_deref().unwrap_or("(none)");
+                let new_str = new_parent.as_deref().unwrap_or("(none)");
+                println!("    {} -> {}", old_str.dimmed(), new_str.cyan());
+            }
+            EventData::ScratchpadAppended { content } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "scratchpad_appended".blue(),
+                    actor.dimmed()
+                );
+                // Show first line of content, truncated if too long
+                let first_line = content.lines().next().unwrap_or("");
+                let display = if first_line.len() > 60 {
+                    format!("{}...", &first_line[..57])
+                } else {
+                    first_line.to_string()
+                };
+                println!("    {}", display);
+            }
         }
         println!();
     }

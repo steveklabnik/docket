@@ -1,7 +1,7 @@
 use anyhow::Result;
 use colored::Colorize;
 
-use crate::bug::{Bug, Priority, Status};
+use crate::change::{Change, Priority, Status};
 use crate::event::Event;
 use crate::store::Store;
 
@@ -51,7 +51,7 @@ pub fn create(title: &str, priority: &str) -> Result<()> {
 }
 
 /// Show epic detail with step progress
-pub fn show(store: &Store, epic: &Bug) -> Result<()> {
+pub fn show(store: &Store, epic: &Change) -> Result<()> {
     let children = get_children(store, epic.id())?;
 
     let completed = children
@@ -119,13 +119,14 @@ pub fn show(store: &Store, epic: &Bug) -> Result<()> {
     Ok(())
 }
 
-/// Get all children of an epic, sorted by their step number
-pub fn get_children(store: &Store, epic_id: &str) -> Result<Vec<Bug>> {
-    let all_bugs = store.list_bugs()?;
+/// Get all children of a change, sorted by their step number.
+/// Uses the unified parent() method which supports both parent and parent_epic fields.
+pub fn get_children(store: &Store, parent_id: &str) -> Result<Vec<Change>> {
+    let all_bugs = store.list_changes()?;
 
-    let mut children: Vec<Bug> = all_bugs
+    let mut children: Vec<Change> = all_bugs
         .into_iter()
-        .filter(|b| b.parent_epic() == Some(epic_id))
+        .filter(|b| b.parent() == Some(parent_id))
         .collect();
 
     // Sort by step number (extract N from "epic_id.N")
@@ -157,7 +158,7 @@ pub fn epic_progress(store: &Store, epic_id: &str) -> Result<(usize, usize)> {
 }
 
 /// Get the next incomplete step of an epic
-pub fn next_step(store: &Store, epic_id: &str) -> Result<Option<Bug>> {
+pub fn next_step(store: &Store, epic_id: &str) -> Result<Option<Change>> {
     let children = get_children(store, epic_id)?;
 
     Ok(children
@@ -177,7 +178,7 @@ pub fn all_children_done(store: &Store, epic_id: &str) -> Result<bool> {
 }
 
 /// Derive the effective status of an epic from its children
-pub fn derive_epic_status(store: &Store, epic: &Bug) -> Result<Status> {
+pub fn derive_epic_status(store: &Store, epic: &Change) -> Result<Status> {
     let children = get_children(store, epic.id())?;
 
     if children.is_empty() {
