@@ -73,6 +73,10 @@ pub enum Commands {
         /// Create as a child step of an epic
         #[arg(short, long, add = ArgValueCompleter::new(complete_bug_id))]
         epic: Option<String>,
+
+        /// Open editor immediately after creation to edit the body
+        #[arg(long)]
+        edit: bool,
     },
 
     /// List all bugs

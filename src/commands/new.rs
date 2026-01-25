@@ -34,6 +34,7 @@ pub fn new(
     version: Option<&str>,
     tags: &[String],
     epic_id: Option<&str>,
+    edit: bool,
 ) -> Result<()> {
     let store = Store::open()?;
 
@@ -171,7 +172,14 @@ pub fn new(
                     .join(", ")
             );
         }
-        println!("  Edit with: {} {}", "docket edit".dimmed(), id.dimmed());
+        if !edit {
+            println!("  Edit with: {} {}", "docket edit".dimmed(), id.dimmed());
+        }
+    }
+
+    // Open editor if --edit flag was passed
+    if edit {
+        super::edit::edit(&id)?;
     }
 
     Ok(())

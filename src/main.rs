@@ -33,6 +33,7 @@ fn main() -> Result<()> {
             version,
             tag,
             epic,
+            edit,
         } => {
             let interactive = title.is_none();
             commands::new(
@@ -45,6 +46,7 @@ fn main() -> Result<()> {
                 version.as_deref(),
                 &tag,
                 epic.as_deref(),
+                edit,
             )
         }
         Commands::List {
