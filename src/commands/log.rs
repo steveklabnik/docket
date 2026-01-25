@@ -235,6 +235,15 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 };
                 println!("    {}", display);
             }
+            EventData::ReleaseSet { release } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "release_set".magenta(),
+                    actor.dimmed()
+                );
+                println!("    Target release: {}", release.cyan());
+            }
         }
         println!();
     }

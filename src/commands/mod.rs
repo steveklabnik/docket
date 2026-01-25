@@ -11,6 +11,7 @@ pub mod list;
 pub mod log;
 pub mod new;
 pub mod ready;
+pub mod release;
 pub mod reparent;
 pub mod scratch;
 pub mod show;

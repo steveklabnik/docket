@@ -7,7 +7,7 @@ use std::str::FromStr;
 
 // Note: Utc is used in ChangeMetadata for created timestamp
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum Status {
     Draft,
@@ -251,6 +251,11 @@ impl FromStr for SortBy {
     }
 }
 
+/// Default target release for changes without an explicit release
+fn default_target_release() -> String {
+    crate::release::UNSCHEDULED_RELEASE.to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeMetadata {
     pub id: String,
@@ -260,6 +265,7 @@ pub struct ChangeMetadata {
     pub created: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changelog_type: Option<ChangelogType>,
+    /// Deprecated: use target_release instead. Kept for backward compatibility.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<String>,
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
@@ -287,6 +293,9 @@ pub struct ChangeMetadata {
     /// Change IDs that this change is blocked by (inter-change dependencies)
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub blocked_by: HashSet<String>,
+    /// Target release version for this change (required, defaults to "unscheduled")
+    #[serde(default = "default_target_release")]
+    pub target_release: String,
 }
 
 #[derive(Debug, Clone)]
@@ -413,6 +422,16 @@ impl Change {
     /// Returns true if this change has any dependencies
     pub fn has_dependencies(&self) -> bool {
         !self.metadata.blocked_by.is_empty()
+    }
+
+    /// Returns the target release for this change
+    pub fn target_release(&self) -> &str {
+        &self.metadata.target_release
+    }
+
+    /// Returns true if this change is unscheduled (not assigned to a release)
+    pub fn is_unscheduled(&self) -> bool {
+        self.metadata.target_release == crate::release::UNSCHEDULED_RELEASE
     }
 }
 

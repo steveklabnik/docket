@@ -275,6 +275,7 @@ dependencies = [
  "predicates",
  "rand",
  "sapling-renderdag",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -674,6 +675,12 @@ checksum = "edffb89cab87bd0901c5749d576f5d37a1f34e05160e936f463f4e94cc447b61"
 dependencies = [
  "bitflags",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "serde"

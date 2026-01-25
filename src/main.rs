@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 
-use docket::cli::{Cli, Commands};
+use docket::cli::{Cli, Commands, ReleaseCommands};
 use docket::commands;
 use docket::workspace;
 
@@ -35,6 +35,7 @@ fn main() -> Result<()> {
             parent,
             epic,
             edit,
+            release,
         } => {
             let interactive = title.is_none();
             // parent takes precedence over epic (epic is legacy alias)
@@ -50,6 +51,7 @@ fn main() -> Result<()> {
                 &tag,
                 parent_id.as_deref(),
                 edit,
+                release.as_deref(),
             )
         }
         Commands::List {
@@ -69,6 +71,8 @@ fn main() -> Result<()> {
             blocking,
             depends_on,
             flat,
+            release,
+            unscheduled,
         } => {
             // --review and --blocked flags are shorthand for --status
             let status_filter = if review {
@@ -93,6 +97,8 @@ fn main() -> Result<()> {
                 blocking,
                 depends_on.as_deref(),
                 flat,
+                release.as_deref(),
+                unscheduled,
             )
         }
         Commands::Show { id } => {
@@ -215,5 +221,30 @@ fn main() -> Result<()> {
         Commands::Scratch { id, content } => commands::scratch(&id, &content),
         Commands::Reparent { id, parent } => commands::reparent(&id, parent.as_deref()),
         Commands::Graph { id, all } => commands::graph(id.as_deref(), all),
+        Commands::Release(release_cmd) => match release_cmd {
+            ReleaseCommands::New {
+                version,
+                title,
+                body,
+                target_date,
+                edit,
+            } => commands::release::new(
+                &version,
+                title.as_deref(),
+                body.as_deref(),
+                target_date.as_deref(),
+                edit,
+            ),
+            ReleaseCommands::List { all } => commands::release::list(all),
+            ReleaseCommands::Show { version } => commands::release::show(&version),
+            ReleaseCommands::Edit { version } => commands::release::edit(&version),
+            ReleaseCommands::Activate { version } => commands::release::activate(&version),
+            ReleaseCommands::Freeze { version } => commands::release::freeze(&version),
+            ReleaseCommands::Ship { version } => commands::release::ship(&version),
+            ReleaseCommands::Cancel { version } => commands::release::cancel(&version),
+            ReleaseCommands::Schedule { change_id, version } => {
+                commands::release::schedule(&change_id, &version)
+            }
+        },
     }
 }

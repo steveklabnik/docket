@@ -8,9 +8,14 @@ use std::path::{Path, PathBuf};
 
 use crate::change::Change;
 use crate::event::{self, Event};
+use crate::release::{
+    self, append_release_event, derive_release, read_release_events, Release, ReleaseEvent,
+    UNSCHEDULED_RELEASE,
+};
 
 const DOCKET_DIR: &str = ".docket";
 const CHANGES_DIR: &str = "changes";
+const RELEASES_DIR: &str = "releases";
 const LEGACY_BUGS_DIR: &str = "bugs";
 const ID_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const ID_LENGTH: usize = 4;
@@ -36,6 +41,9 @@ impl Store {
                 let store = Store { root: docket_path };
                 // Migrate from legacy bugs/ directory if needed
                 store.migrate_bugs_to_changes()?;
+                // Ensure releases directory exists (for repos created before releases feature)
+                store.ensure_releases_dir()?;
+                store.ensure_unscheduled_release()?;
                 return Ok(store);
             }
 
@@ -66,12 +74,21 @@ impl Store {
         fs::create_dir_all(&changes_dir)
             .with_context(|| format!("failed to create {}", changes_dir.display()))?;
 
+        let releases_dir = root.join(RELEASES_DIR);
+        fs::create_dir_all(&releases_dir)
+            .with_context(|| format!("failed to create {}", releases_dir.display()))?;
+
         // Create .gitignore for cache directory
         let gitignore_path = root.join(".gitignore");
         fs::write(&gitignore_path, ".cache/\n")
             .with_context(|| format!("failed to create {}", gitignore_path.display()))?;
 
-        Ok(Store { root })
+        let store = Store { root };
+
+        // Create the special "unscheduled" release
+        store.ensure_unscheduled_release()?;
+
+        Ok(store)
     }
 
     /// Migrate from legacy .docket/bugs/ directory to .docket/changes/
@@ -609,6 +626,170 @@ impl Store {
         })?;
 
         recover_file(&path)
+    }
+
+    // ========================================================================
+    // Release Methods
+    // ========================================================================
+
+    /// Path to the releases directory
+    fn releases_dir(&self) -> PathBuf {
+        self.root.join(RELEASES_DIR)
+    }
+
+    /// Ensure the releases directory exists
+    fn ensure_releases_dir(&self) -> Result<()> {
+        let dir = self.releases_dir();
+        if !dir.exists() {
+            fs::create_dir_all(&dir)
+                .with_context(|| format!("failed to create {}", dir.display()))?;
+        }
+        Ok(())
+    }
+
+    /// Path to a specific release's event log file
+    fn release_path(&self, version: &str) -> PathBuf {
+        self.releases_dir().join(format!("{}.jsonl", version))
+    }
+
+    /// Ensure the special "unscheduled" release exists
+    pub fn ensure_unscheduled_release(&self) -> Result<()> {
+        self.ensure_releases_dir()?;
+
+        let path = self.release_path(UNSCHEDULED_RELEASE);
+        if path.exists() {
+            return Ok(());
+        }
+
+        let event = ReleaseEvent::created(
+            UNSCHEDULED_RELEASE.to_string(),
+            Some("Unscheduled".to_string()),
+            "Backlog items not yet assigned to a release.".to_string(),
+            None,
+        );
+
+        append_release_event(&path, &event)?;
+
+        Ok(())
+    }
+
+    /// List all releases
+    pub fn list_releases(&self) -> Result<Vec<Release>> {
+        self.ensure_releases_dir()?;
+        self.ensure_unscheduled_release()?;
+
+        let releases_dir = self.releases_dir();
+        let pattern = releases_dir.join("*.jsonl");
+        let pattern_str = pattern
+            .to_str()
+            .ok_or_else(|| anyhow!("invalid path encoding"))?;
+
+        let mut releases = Vec::new();
+
+        for entry in glob::glob(pattern_str)? {
+            let path = entry?;
+            let events = read_release_events(&path)?;
+
+            match derive_release(&events) {
+                Ok(release) => releases.push(release),
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to derive release from {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Sort by status (active first), then by version
+        releases.sort_by(|a, b| {
+            let status_cmp = a.status().cmp(b.status());
+            if status_cmp == std::cmp::Ordering::Equal {
+                // Compare by semver if both are valid, otherwise alphabetically
+                let a_ver = release::parse_version(a.version());
+                let b_ver = release::parse_version(b.version());
+                match (a_ver, b_ver) {
+                    (Some(av), Some(bv)) => bv.cmp(&av), // Newer versions first
+                    (Some(_), None) => std::cmp::Ordering::Less, // Semver before non-semver
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => a.version().cmp(b.version()),
+                }
+            } else {
+                status_cmp
+            }
+        });
+
+        Ok(releases)
+    }
+
+    /// Get a specific release by version
+    pub fn get_release(&self, version: &str) -> Result<Release> {
+        self.ensure_releases_dir()?;
+
+        // Handle the unscheduled release specially
+        if version == UNSCHEDULED_RELEASE {
+            self.ensure_unscheduled_release()?;
+        }
+
+        let path = self.release_path(version);
+
+        if !path.exists() {
+            return Err(anyhow!(
+                "release not found: '{}'\n\
+                 Run 'docket release list' to see all releases.",
+                version
+            ));
+        }
+
+        let events = read_release_events(&path)?;
+        derive_release(&events)
+    }
+
+    /// Append an event to a release's event log
+    pub fn append_release_event(&self, event: &ReleaseEvent) -> Result<()> {
+        self.ensure_releases_dir()?;
+
+        let path = self.release_path(&event.release_version);
+        append_release_event(&path, event)
+    }
+
+    /// Check if a release exists
+    pub fn release_exists(&self, version: &str) -> bool {
+        let path = self.release_path(version);
+        path.exists()
+    }
+
+    /// Get all events for a release
+    pub fn get_release_events(&self, version: &str) -> Result<Vec<ReleaseEvent>> {
+        let path = self.release_path(version);
+        if !path.exists() {
+            return Err(anyhow!(
+                "release not found: '{}'\n\
+                 Run 'docket release list' to see all releases.",
+                version
+            ));
+        }
+        read_release_events(&path)
+    }
+
+    /// Get changes for a specific release
+    pub fn get_changes_for_release(&self, version: &str) -> Result<Vec<Change>> {
+        let changes = self.list_changes()?;
+        Ok(changes
+            .into_iter()
+            .filter(|c| c.target_release() == version)
+            .collect())
+    }
+
+    /// Count changes by status for a release (returns (completed, total))
+    pub fn release_progress(&self, version: &str) -> Result<(usize, usize)> {
+        let changes = self.get_changes_for_release(version)?;
+        let completed = changes
+            .iter()
+            .filter(|c| matches!(c.status(), crate::change::Status::Done))
+            .count();
+        Ok((completed, changes.len()))
     }
 }
 

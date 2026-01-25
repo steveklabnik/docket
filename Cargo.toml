@@ -24,6 +24,7 @@ colored = "2"
 dialoguer = { version = "0.11", features = ["editor"] }
 anyhow = "1"
 toml = "0.8"
+semver = "1"
 tempfile = "3"
 sapling-renderdag = "0.1"
 

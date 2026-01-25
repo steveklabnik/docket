@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 
 use crate::change::{Change, ChangelogType, Priority, SortBy, Status};
 use crate::commands::{approve, show, work};
+use crate::release::UNSCHEDULED_RELEASE;
 use crate::store::Store;
 
 #[allow(clippy::too_many_arguments)]
@@ -23,6 +24,8 @@ pub fn list(
     blocking_filter: bool,
     depends_on_filter: Option<&str>,
     flat: bool,
+    release_filter: Option<&str>,
+    unscheduled_only: bool,
 ) -> Result<()> {
     // Parse sort field early to catch invalid input
     let sort_by: SortBy = sort_by.parse().context("invalid sort field")?;
@@ -129,6 +132,18 @@ pub fn list(
                 if !bug.is_blocked_by(blocker_id) {
                     return false;
                 }
+            }
+
+            // Apply --release filter: show only bugs targeting a specific release
+            if let Some(release) = release_filter {
+                if bug.target_release() != release {
+                    return false;
+                }
+            }
+
+            // Apply --unscheduled filter: show only bugs not assigned to a release
+            if unscheduled_only && bug.target_release() != UNSCHEDULED_RELEASE {
+                return false;
             }
 
             true

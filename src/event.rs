@@ -8,6 +8,7 @@ use std::path::Path;
 use uuid::Uuid;
 
 use crate::change::{Change, ChangeMetadata, ChangelogType, Priority, Status};
+use crate::release::UNSCHEDULED_RELEASE;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type", content = "data")]
@@ -65,10 +66,14 @@ pub enum EventData {
         changelog_type: ChangelogType,
     },
     /// Add a version to a change (can have multiple versions for backports)
+    /// DEPRECATED: Use ReleaseSet and target_release instead.
+    /// Kept for backward compatibility with existing event logs.
     VersionAdded {
         version: String,
     },
     /// Remove a version from a change
+    /// DEPRECATED: Use ReleaseSet and target_release instead.
+    /// Kept for backward compatibility with existing event logs.
     VersionRemoved {
         version: String,
     },
@@ -103,6 +108,11 @@ pub enum EventData {
     ScratchpadAppended {
         /// Content to append to the scratchpad
         content: String,
+    },
+    /// Set the target release for a change
+    ReleaseSet {
+        /// The release version this change targets
+        release: String,
     },
 }
 
@@ -285,6 +295,10 @@ impl Event {
     pub fn dependency_removed(change_id: String, blocked_by: String) -> Self {
         Self::new(change_id, EventData::DependencyRemoved { blocked_by })
     }
+
+    pub fn release_set(change_id: String, release: String) -> Self {
+        Self::new(change_id, EventData::ReleaseSet { release })
+    }
 }
 
 /// Append an event to a change's JSONL file
@@ -382,6 +396,7 @@ pub fn derive_change(events: &[Event]) -> Result<Change> {
             blocked_reason: None,
             paused_reason: None,
             blocked_by: HashSet::new(),
+            target_release: UNSCHEDULED_RELEASE.to_string(),
         },
         body: initial_body,
     };
@@ -461,6 +476,9 @@ pub fn derive_change(events: &[Event]) -> Result<Change> {
                     change.metadata.scratchpad.push_str("\n\n");
                 }
                 change.metadata.scratchpad.push_str(content);
+            }
+            EventData::ReleaseSet { release } => {
+                change.metadata.target_release = release.clone();
             }
         }
     }

@@ -13,17 +13,22 @@ pub fn changelog(version: &str, preview: bool, file: Option<&str>) -> Result<()>
     let store = Store::open()?;
     let bugs = store.list_changes()?;
 
-    // Filter bugs that have this version
+    // Filter bugs that target this release OR have this version (legacy)
+    // Prefer target_release, but also check versions for backward compatibility
     let version_bugs: Vec<_> = bugs
         .into_iter()
-        .filter(|bug| bug.has_version(version))
+        .filter(|bug| bug.target_release() == version || bug.has_version(version))
         .collect();
 
     if version_bugs.is_empty() {
         println!(
-            "{} No changes found for version {}",
+            "{} No changes found for release {}",
             "!".yellow(),
             version.cyan()
+        );
+        println!(
+            "{}",
+            "Hint: Use 'docket release schedule <id> <version>' to assign changes.".dimmed()
         );
         return Ok(());
     }

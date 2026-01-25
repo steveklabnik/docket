@@ -64,6 +64,7 @@ pub enum Commands {
         changelog: Option<String>,
 
         /// Version to assign to this change (can be added multiple times for backports)
+        /// DEPRECATED: use --release instead
         #[arg(short, long)]
         version: Option<String>,
 
@@ -82,6 +83,10 @@ pub enum Commands {
         /// Open editor immediately after creation to edit the body
         #[arg(long)]
         edit: bool,
+
+        /// Target release version (defaults to "unscheduled")
+        #[arg(short = 'r', long)]
+        release: Option<String>,
     },
 
     /// List all changes
@@ -122,11 +127,12 @@ pub enum Commands {
         #[arg(short, long)]
         interactive: bool,
 
-        /// Filter by version
+        /// Filter by version (DEPRECATED: use --release instead)
         #[arg(short, long)]
         version: Option<String>,
 
         /// Show only changes without a version (unreleased)
+        /// DEPRECATED: use --unscheduled instead
         #[arg(long)]
         no_version: bool,
 
@@ -149,6 +155,14 @@ pub enum Commands {
         /// Show as flat list instead of tree structure
         #[arg(long)]
         flat: bool,
+
+        /// Filter by target release version
+        #[arg(long, value_name = "VERSION")]
+        release: Option<String>,
+
+        /// Show only unscheduled changes (not assigned to any release)
+        #[arg(long)]
+        unscheduled: bool,
     },
 
     /// Show details of a change (uses current workspace change if no ID provided)
@@ -185,10 +199,12 @@ pub enum Commands {
         changelog: Option<String>,
 
         /// Add a version to this change (can be used multiple times for backports)
+        /// DEPRECATED: use 'docket release schedule' instead
         #[arg(short, long)]
         version: Option<String>,
 
         /// Remove a version from this change
+        /// DEPRECATED: use 'docket release schedule' instead
         #[arg(long)]
         remove_version: Option<String>,
     },
@@ -490,5 +506,87 @@ pub enum Commands {
         /// Show all changes including done and not-planned
         #[arg(short, long)]
         all: bool,
+    },
+
+    /// Manage releases (milestones)
+    #[command(subcommand)]
+    Release(ReleaseCommands),
+}
+
+#[derive(Subcommand)]
+pub enum ReleaseCommands {
+    /// Create a new release
+    New {
+        /// Semver version string (e.g., "1.0.0", "0.3.0-beta.1")
+        version: String,
+
+        /// Human-readable title (e.g., "Performance Release")
+        #[arg(short, long)]
+        title: Option<String>,
+
+        /// Read description from file (use - for stdin)
+        #[arg(short, long)]
+        body: Option<String>,
+
+        /// Target release date (YYYY-MM-DD)
+        #[arg(long)]
+        target_date: Option<String>,
+
+        /// Open editor immediately to write description
+        #[arg(long)]
+        edit: bool,
+    },
+
+    /// List releases
+    List {
+        /// Show all releases including released and cancelled
+        #[arg(short, long)]
+        all: bool,
+    },
+
+    /// Show release details and progress
+    Show {
+        /// Release version
+        version: String,
+    },
+
+    /// Edit release title and description
+    Edit {
+        /// Release version
+        version: String,
+    },
+
+    /// Activate a release (Planning -> Active)
+    Activate {
+        /// Release version
+        version: String,
+    },
+
+    /// Freeze a release (Active -> Frozen)
+    Freeze {
+        /// Release version
+        version: String,
+    },
+
+    /// Ship a release (Active/Frozen -> Released)
+    Ship {
+        /// Release version
+        version: String,
+    },
+
+    /// Cancel a release
+    Cancel {
+        /// Release version
+        version: String,
+    },
+
+    /// Schedule a change for a release
+    Schedule {
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
+        change_id: String,
+
+        /// Target release version
+        version: String,
     },
 }

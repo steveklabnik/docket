@@ -7,6 +7,7 @@ use std::io::{self, Read};
 use crate::change::{ChangelogType, Priority};
 use crate::config::Config;
 use crate::event::Event;
+use crate::release::{validate_version, UNSCHEDULED_RELEASE};
 use crate::store::Store;
 use crate::template::{self, TemplateContext};
 
@@ -35,8 +36,26 @@ pub fn new(
     tags: &[String],
     parent_id: Option<&str>,
     edit: bool,
+    release: Option<&str>,
 ) -> Result<()> {
     let store = Store::open()?;
+
+    // Validate release version if provided
+    let target_release = release.unwrap_or(UNSCHEDULED_RELEASE);
+    validate_version(target_release)?;
+
+    // Check that release exists
+    if !store.release_exists(target_release) {
+        store.ensure_unscheduled_release()?;
+        if !store.release_exists(target_release) {
+            return Err(anyhow::anyhow!(
+                "release '{}' does not exist\n\
+                 Create it with: docket release new {}",
+                target_release,
+                target_release
+            ));
+        }
+    }
 
     // If creating a child, verify the parent change exists
     let parent_change = if let Some(parent_ref) = parent_id {
@@ -129,9 +148,15 @@ pub fn new(
         tx.add_event(event);
     }
 
-    // Add VersionAdded event if version was provided
+    // Add VersionAdded event if version was provided (deprecated)
     if let Some(ver) = version {
         let event = Event::version_added(id.clone(), ver.to_string());
+        tx.add_event(event);
+    }
+
+    // Set the target release (if not unscheduled, add an explicit event)
+    if target_release != UNSCHEDULED_RELEASE {
+        let event = Event::release_set(id.clone(), target_release.to_string());
         tx.add_event(event);
     }
 
@@ -154,6 +179,9 @@ pub fn new(
         );
     } else {
         println!("{} Created change {} - {}", "✓".green(), id.cyan(), title);
+        if target_release != UNSCHEDULED_RELEASE {
+            println!("  Release: {}", target_release.cyan());
+        }
         if !tags.is_empty() {
             println!(
                 "  Tags: {}",

@@ -2,6 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 
 use crate::change::{Change, Status};
+use crate::release::UNSCHEDULED_RELEASE;
 use crate::store::Store;
 
 pub fn show(id: &str) -> Result<()> {
@@ -50,9 +51,17 @@ pub fn show(id: &str) -> Result<()> {
         println!("{:12} {}", "Changelog:".dimmed(), ct);
     }
 
-    // Show versions if any
+    // Show versions if any (deprecated, kept for compatibility)
     if !bug.versions().is_empty() {
         println!("{:12} {}", "Versions:".dimmed(), bug.versions().join(", "));
+    }
+
+    // Show target release
+    let release_str = bug.target_release();
+    if release_str == UNSCHEDULED_RELEASE {
+        println!("{:12} {}", "Release:".dimmed(), release_str.yellow());
+    } else {
+        println!("{:12} {}", "Release:".dimmed(), release_str.cyan());
     }
 
     // Show tags if any
