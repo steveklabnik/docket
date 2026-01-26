@@ -3,6 +3,10 @@
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
 use std::path::Path;
+use std::process::Command;
+
+/// The name of the bookmark used to store docket state.
+pub const STATE_BRANCH: &str = "docket-state";
 
 /// Check if we're running from a workspace directory for the given bug.
 /// Returns true if in workspace ws-{bug_id}, false otherwise.
@@ -248,4 +252,174 @@ pub fn parse_github_repo(url: &str) -> Result<String> {
          Expected format: https://github.com/owner/repo or git@github.com:owner/repo",
         url
     ))
+}
+
+/// Get the current jj change-id.
+/// Returns the full change ID of the working copy (@).
+pub fn current_change_id() -> Result<String> {
+    let output = Command::new("jj")
+        .args(["log", "-r", "@", "--no-graph", "-T", "change_id"])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let change_id = String::from_utf8(output.stdout)
+                .context("invalid UTF-8 in change_id output")?
+                .trim()
+                .to_string();
+            if change_id.is_empty() {
+                Err(anyhow!("jj returned empty change_id"))
+            } else {
+                Ok(change_id)
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("jj log failed: {}", stderr.trim()))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
+        Err(e) => Err(anyhow!("failed to run jj: {}", e)),
+    }
+}
+
+/// Check if the docket-state bookmark exists.
+/// Returns true if the bookmark exists, false otherwise.
+pub fn has_state_branch() -> Result<bool> {
+    let output = Command::new("jj")
+        .args(["bookmark", "list", "--all"])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8(output.stdout)
+                .context("invalid UTF-8 in bookmark list output")?;
+            // Each line in bookmark list starts with the bookmark name
+            // Format is "bookmark-name: change-id [other info]" or "bookmark-name@remote: ..."
+            Ok(stdout.lines().any(|line| {
+                let bookmark = line.split(':').next().unwrap_or("");
+                let bookmark = bookmark.split('@').next().unwrap_or(bookmark);
+                bookmark == STATE_BRANCH
+            }))
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("jj bookmark list failed: {}", stderr.trim()))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
+        Err(e) => Err(anyhow!("failed to run jj: {}", e)),
+    }
+}
+
+/// Read file content from the state branch.
+/// Returns the content of the file at the given path in the docket-state branch.
+pub fn read_state_file(path: &str) -> Result<String> {
+    let output = Command::new("jj")
+        .args(["file", "show", "-r", STATE_BRANCH, path])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            String::from_utf8(output.stdout).context("invalid UTF-8 in file content")
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            // Check for common error cases
+            if stderr.contains("No such path") {
+                Err(anyhow!("file not found in state branch: {}", path))
+            } else if stderr.contains("Revision") && stderr.contains("doesn't exist") {
+                Err(anyhow!(
+                    "state branch '{}' does not exist. Run 'docket init' first.",
+                    STATE_BRANCH
+                ))
+            } else {
+                Err(anyhow!("jj file show failed: {}", stderr))
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
+        Err(e) => Err(anyhow!("failed to run jj: {}", e)),
+    }
+}
+
+/// List files in the state branch matching a glob pattern.
+/// Returns a list of file paths that match the pattern.
+pub fn list_state_files(pattern: &str) -> Result<Vec<String>> {
+    let output = Command::new("jj")
+        .args(["file", "list", "-r", STATE_BRANCH, pattern])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout =
+                String::from_utf8(output.stdout).context("invalid UTF-8 in file list output")?;
+            Ok(stdout.lines().map(|s| s.to_string()).collect())
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = stderr.trim();
+            // Check for state branch not existing
+            if stderr.contains("Revision") && stderr.contains("doesn't exist") {
+                Err(anyhow!(
+                    "state branch '{}' does not exist. Run 'docket init' first.",
+                    STATE_BRANCH
+                ))
+            } else {
+                Err(anyhow!("jj file list failed: {}", stderr))
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
+        Err(e) => Err(anyhow!("failed to run jj: {}", e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_github_repo_https() {
+        assert_eq!(
+            parse_github_repo("https://github.com/owner/repo.git").unwrap(),
+            "owner/repo"
+        );
+        assert_eq!(
+            parse_github_repo("https://github.com/owner/repo").unwrap(),
+            "owner/repo"
+        );
+    }
+
+    #[test]
+    fn test_parse_github_repo_ssh() {
+        assert_eq!(
+            parse_github_repo("git@github.com:owner/repo.git").unwrap(),
+            "owner/repo"
+        );
+        assert_eq!(
+            parse_github_repo("git@github.com:owner/repo").unwrap(),
+            "owner/repo"
+        );
+    }
+
+    #[test]
+    fn test_parse_github_repo_invalid() {
+        assert!(parse_github_repo("https://gitlab.com/owner/repo").is_err());
+        assert!(parse_github_repo("not-a-url").is_err());
+    }
+
+    #[test]
+    fn test_state_branch_constant() {
+        assert_eq!(STATE_BRANCH, "docket-state");
+    }
 }

@@ -12,7 +12,7 @@
 
 mod block;
 mod done;
-mod jj;
+pub mod jj;
 mod pause;
 mod reject;
 mod resume;
