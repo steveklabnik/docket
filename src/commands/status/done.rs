@@ -201,6 +201,7 @@ fn create_pr(bug_title: &str, bug_id: &str) -> Result<()> {
 /// the bug as done even if unchecked criteria remain.
 ///
 /// If `describe` is true, generates a commit message via Claude and updates jj describe.
+/// When a workspace exists, describe defaults to true unless `no_describe` is set.
 /// If `squash` is true, squashes workspace commits before completing.
 /// If `submit` is true, creates a PR using GitHub CLI.
 pub fn done(
@@ -208,6 +209,7 @@ pub fn done(
     auto: bool,
     force: bool,
     describe: bool,
+    no_describe: bool,
     squash: bool,
     submit: bool,
 ) -> Result<()> {
@@ -258,49 +260,67 @@ pub fn done(
         }
     }
 
-    // Determine if workspace operations are needed (for later logic)
-    let needs_workspace = describe || squash || submit;
-
     // Track if we switched directories (so we can switch back)
     let original_dir = std::env::current_dir().ok();
     let mut switched_to_workspace = false;
 
-    // Check if we're running from a workspace
+    // Check if we're running from a workspace or if one exists
     let mut in_workspace = jj::is_in_workspace(&bug_id);
+    let workspace_dir = if !in_workspace {
+        jj::find_workspace_dir(&bug_id)
+    } else {
+        None
+    };
+    let workspace_available = in_workspace || workspace_dir.is_some();
 
-    // If not in workspace, try to switch to it so status event is written there
-    if !in_workspace {
-        if let Some(workspace_dir) = jj::find_workspace_dir(&bug_id) {
+    // Compute whether to run describe:
+    // - If --no-describe: never describe
+    // - If --describe: always describe (requires workspace)
+    // - Otherwise: describe by default if workspace exists
+    let do_describe = if no_describe {
+        false
+    } else if describe {
+        true
+    } else {
+        // Default: describe if workspace is available
+        workspace_available
+    };
+
+    // Check if workspace is required but not available
+    if (do_describe || squash) && !workspace_available {
+        return Err(anyhow!(
+            "no workspace found for change '{}'. The --describe and --squash flags require a workspace.\n\
+             Start work on the change first with 'docket work {}'.",
+            bug_id,
+            bug_id
+        ));
+    }
+
+    // Switch to workspace if needed for jj operations
+    let needs_workspace_switch = (do_describe || squash || submit) && !in_workspace;
+    if needs_workspace_switch {
+        if let Some(ref ws_dir) = workspace_dir {
             println!(
                 "{} Found workspace at {}, switching...",
                 "→".blue(),
-                workspace_dir.display()
+                ws_dir.display()
             );
-            std::env::set_current_dir(&workspace_dir)?;
+            std::env::set_current_dir(ws_dir)?;
             switched_to_workspace = true;
             in_workspace = true;
-        } else if describe || squash {
-            // --describe and --squash require a workspace
-            return Err(anyhow!(
-                "no workspace found for change '{}'. The --describe and --squash flags require a workspace.\n\
-                 Start work on the change first with 'docket work {}'.",
-                bug_id,
-                bug_id
-            ));
         }
     }
 
-    // Re-open store after potential directory switch so events are written to the
-    // workspace's .docket (which will be part of the jj commit history when merged)
-    let store = Store::open()?;
+    // Note: We keep using the original store opened above for event writes.
+    // The directory switch is only for jj commands (squash, describe, submit).
 
     // Perform squash first (before describe, so the squashed commit gets the message)
     if squash && in_workspace {
         squash_commits()?;
     }
 
-    // Generate commit message if --describe is passed
-    if describe && in_workspace {
+    // Generate commit message if describe is enabled
+    if do_describe && in_workspace {
         println!(
             "{} Running from workspace for bug {}",
             "→".blue(),
@@ -372,7 +392,8 @@ pub fn done(
 
     // Only create a fresh jj change if NOT in a workspace and no workspace operations were done
     // (workspace changes stay as-is for review/submission)
-    if !in_workspace && !needs_workspace {
+    let did_workspace_ops = do_describe || squash || submit;
+    if !in_workspace && !did_workspace_ops {
         jj::create_fresh_change_if_needed()?;
     }
 

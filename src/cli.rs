@@ -407,8 +407,13 @@ pub enum Commands {
         force: bool,
 
         /// Generate commit message via Claude and update jj describe
+        /// (default when workspace exists, use --no-describe to skip)
         #[arg(long)]
         describe: bool,
+
+        /// Skip generating commit message (overrides default --describe behavior)
+        #[arg(long)]
+        no_describe: bool,
 
         /// Squash workspace commits before completing
         #[arg(long)]

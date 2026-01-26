@@ -189,11 +189,12 @@ fn main() -> Result<()> {
             auto,
             force,
             describe,
+            no_describe,
             squash,
             submit,
         } => {
             let id = resolve_change_id(id)?;
-            commands::done(&id, auto, force, describe, squash, submit)
+            commands::done(&id, auto, force, describe, no_describe, squash, submit)
         }
         Commands::Work {
             id,
