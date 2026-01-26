@@ -162,6 +162,41 @@ pub struct ListArgs {
     pub unscheduled: bool,
 }
 
+/// Arguments for the 'record' command (boxed to reduce enum size)
+#[derive(Args)]
+pub struct RecordArgs {
+    /// Title describing the completed work
+    pub title: String,
+
+    /// Read body/description from file (use - for stdin)
+    #[arg(short, long)]
+    pub body: Option<String>,
+
+    /// Changelog type (feature, fix, change, deprecated, removed, security, internal)
+    #[arg(short, long)]
+    pub changelog: Option<String>,
+
+    /// Target release version
+    #[arg(short = 'r', long)]
+    pub release: Option<String>,
+
+    /// Create as a child (sub-change) of another change
+    #[arg(long, add = ArgValueCompleter::new(complete_change_id))]
+    pub parent: Option<String>,
+
+    /// PR number (stored in body as reference)
+    #[arg(long)]
+    pub pr: Option<String>,
+
+    /// Commit SHA (stored in body as reference)
+    #[arg(long)]
+    pub commit: Option<String>,
+
+    /// Open editor to write description
+    #[arg(long)]
+    pub edit: bool,
+}
+
 /// Arguments for the 'update' command (boxed to reduce enum size)
 #[derive(Args)]
 pub struct UpdateArgs {
@@ -211,6 +246,12 @@ pub enum Commands {
 
     /// Create a new change
     New(Box<NewArgs>),
+
+    /// Record already-completed work (creates change directly in Done status)
+    ///
+    /// Use this to capture work that happened before docket tracking was in place,
+    /// such as external contributions, ad-hoc fixes, or retrospective documentation.
+    Record(Box<RecordArgs>),
 
     /// List all changes
     List(Box<ListArgs>),

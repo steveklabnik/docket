@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::Parser;
 
-use docket::cli::{Cli, Commands, ListArgs, NewArgs, ReleaseCommands, UpdateArgs};
+use docket::cli::{Cli, Commands, ListArgs, NewArgs, RecordArgs, ReleaseCommands, UpdateArgs};
 use docket::commands;
 use docket::workspace;
 
@@ -53,6 +53,28 @@ fn main() -> Result<()> {
                 parent_id.as_deref(),
                 edit,
                 release.as_deref(),
+            )
+        }
+        Commands::Record(args) => {
+            let RecordArgs {
+                title,
+                body,
+                changelog,
+                release,
+                parent,
+                pr,
+                commit,
+                edit,
+            } = *args;
+            commands::record(
+                &title,
+                body.as_deref(),
+                changelog.as_deref(),
+                release.as_deref(),
+                parent.as_deref(),
+                pr.as_deref(),
+                commit.as_deref(),
+                edit,
             )
         }
         Commands::List(args) => {

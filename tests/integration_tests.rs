@@ -1067,3 +1067,209 @@ mod ready_command {
             .stdout(predicate::str::contains("No approved changes"));
     }
 }
+
+mod record_command {
+    use super::*;
+
+    #[test]
+    fn record_creates_change_in_done_status() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["record", "Fix memory leak in parser"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Recorded completed change"))
+            .stdout(predicate::str::contains("Status: done"));
+
+        // Verify the change exists with done status
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--all"])
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        assert!(output.contains("Fix memory leak in parser"));
+        assert!(output.contains("done"));
+    }
+
+    #[test]
+    fn record_with_changelog_type() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["record", "Add new feature", "--changelog", "feature"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Changelog: feature"));
+
+        // Show should display changelog type
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--all"])
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let id = output
+            .lines()
+            .find(|l| l.contains("Add new feature"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["show", id])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("feature"));
+    }
+
+    #[test]
+    fn record_with_release() {
+        let dir = setup_docket_repo();
+
+        // Create a release first
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["release", "new", "1.0.0"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["record", "Bug fix for release", "--release", "1.0.0"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Release: 1.0.0"));
+
+        // Verify it appears in release show
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["release", "show", "1.0.0"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Bug fix for release"));
+    }
+
+    #[test]
+    fn record_with_pr_and_commit_references() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args([
+                "record",
+                "External contribution",
+                "--pr",
+                "123",
+                "--commit",
+                "abc1234",
+            ])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("References added to body"));
+
+        // Show should display the references in the body
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--all"])
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let id = output
+            .lines()
+            .find(|l| l.contains("External contribution"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["show", id])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("PR: #123"))
+            .stdout(predicate::str::contains("Commit: abc1234"));
+    }
+
+    #[test]
+    fn record_with_body_from_stdin() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["record", "Change with description", "--body", "-"])
+            .write_stdin("This is the detailed description of the work done.")
+            .assert()
+            .success();
+
+        // Show should display the body
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["list", "--all"])
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let id = output
+            .lines()
+            .find(|l| l.contains("Change with description"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["show", id])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(
+                "This is the detailed description of the work done.",
+            ));
+    }
+
+    #[test]
+    fn record_with_parent() {
+        let dir = setup_docket_repo();
+
+        // Create a parent change first
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Parent epic"])
+            .assert()
+            .success();
+
+        // Get the parent ID
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let output = String::from_utf8_lossy(&list_output.stdout);
+        let parent_id = output
+            .lines()
+            .find(|l| l.contains("Parent epic"))
+            .and_then(|l| l.split_whitespace().next())
+            .unwrap()
+            .to_string();
+
+        // Record a child change
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["record", "Child task", "--parent", &parent_id])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains(&format!("under {}", parent_id)));
+    }
+
+    #[test]
+    fn record_fails_for_nonexistent_release() {
+        let dir = setup_docket_repo();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["record", "Some work", "--release", "9.9.9"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("does not exist"));
+    }
+}
