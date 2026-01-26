@@ -114,6 +114,16 @@ pub enum EventData {
         /// The release version this change targets
         release: String,
     },
+    /// Records when work begins on a change
+    WorkStarted {
+        /// jj change-id where work will happen
+        change_id: String,
+    },
+    /// Records when work completes on a change
+    WorkCompleted {
+        /// jj change-id that implements the fix
+        change_id: String,
+    },
 }
 
 /// Current event schema version.
@@ -299,6 +309,24 @@ impl Event {
     pub fn release_set(change_id: String, release: String) -> Self {
         Self::new(change_id, EventData::ReleaseSet { release })
     }
+
+    pub fn work_started(change_id: String, jj_change_id: String) -> Self {
+        Self::new(
+            change_id,
+            EventData::WorkStarted {
+                change_id: jj_change_id,
+            },
+        )
+    }
+
+    pub fn work_completed(change_id: String, jj_change_id: String) -> Self {
+        Self::new(
+            change_id,
+            EventData::WorkCompleted {
+                change_id: jj_change_id,
+            },
+        )
+    }
 }
 
 /// Append an event to a change's JSONL file
@@ -397,6 +425,8 @@ pub fn derive_change(events: &[Event]) -> Result<Change> {
             paused_reason: None,
             blocked_by: HashSet::new(),
             target_release: UNSCHEDULED_RELEASE.to_string(),
+            work_started_change_id: None,
+            work_completed_change_id: None,
         },
         body: initial_body,
     };
@@ -479,6 +509,12 @@ pub fn derive_change(events: &[Event]) -> Result<Change> {
             }
             EventData::ReleaseSet { release } => {
                 change.metadata.target_release = release.clone();
+            }
+            EventData::WorkStarted { change_id } => {
+                change.metadata.work_started_change_id = Some(change_id.clone());
+            }
+            EventData::WorkCompleted { change_id } => {
+                change.metadata.work_completed_change_id = Some(change_id.clone());
             }
         }
     }
@@ -845,5 +881,170 @@ mod tests {
 
         // The version field should be included in serialized output
         assert!(json.contains("\"version\":1"));
+    }
+
+    #[test]
+    fn parse_work_started_event() {
+        let json = r#"{"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"work_started","data":{"change_id":"jjchangeid123"}}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(event.change_id, "abc1");
+        match &event.data {
+            EventData::WorkStarted { change_id } => {
+                assert_eq!(change_id, "jjchangeid123");
+            }
+            _ => panic!("Expected WorkStarted event"),
+        }
+    }
+
+    #[test]
+    fn parse_work_completed_event() {
+        let json = r#"{"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"work_completed","data":{"change_id":"jjchangeid456"}}"#;
+
+        let event: Event = serde_json::from_str(json).unwrap();
+
+        assert_eq!(event.change_id, "abc1");
+        match &event.data {
+            EventData::WorkCompleted { change_id } => {
+                assert_eq!(change_id, "jjchangeid456");
+            }
+            _ => panic!("Expected WorkCompleted event"),
+        }
+    }
+
+    #[test]
+    fn derive_change_with_work_started() {
+        let events = vec![
+            make_event(
+                "abc1",
+                EventData::Created {
+                    title: "Test".to_string(),
+                    priority: Priority::Medium,
+                    body: "Body".to_string(),
+                    is_epic: None,
+                    parent: None,
+                    parent_epic: None,
+                },
+                ts(1000),
+            ),
+            make_event(
+                "abc1",
+                EventData::WorkStarted {
+                    change_id: "jjstart123".to_string(),
+                },
+                ts(2000),
+            ),
+        ];
+
+        let change = derive_change(&events).unwrap();
+
+        assert_eq!(
+            change.metadata.work_started_change_id,
+            Some("jjstart123".to_string())
+        );
+        assert_eq!(change.metadata.work_completed_change_id, None);
+    }
+
+    #[test]
+    fn derive_change_with_work_completed() {
+        let events = vec![
+            make_event(
+                "abc1",
+                EventData::Created {
+                    title: "Test".to_string(),
+                    priority: Priority::Medium,
+                    body: "Body".to_string(),
+                    is_epic: None,
+                    parent: None,
+                    parent_epic: None,
+                },
+                ts(1000),
+            ),
+            make_event(
+                "abc1",
+                EventData::WorkCompleted {
+                    change_id: "jjcomplete456".to_string(),
+                },
+                ts(2000),
+            ),
+        ];
+
+        let change = derive_change(&events).unwrap();
+
+        assert_eq!(change.metadata.work_started_change_id, None);
+        assert_eq!(
+            change.metadata.work_completed_change_id,
+            Some("jjcomplete456".to_string())
+        );
+    }
+
+    #[test]
+    fn derive_change_with_both_work_events() {
+        let events = vec![
+            make_event(
+                "abc1",
+                EventData::Created {
+                    title: "Test".to_string(),
+                    priority: Priority::Medium,
+                    body: "Body".to_string(),
+                    is_epic: None,
+                    parent: None,
+                    parent_epic: None,
+                },
+                ts(1000),
+            ),
+            make_event(
+                "abc1",
+                EventData::WorkStarted {
+                    change_id: "jjstart123".to_string(),
+                },
+                ts(2000),
+            ),
+            make_event(
+                "abc1",
+                EventData::WorkCompleted {
+                    change_id: "jjcomplete456".to_string(),
+                },
+                ts(3000),
+            ),
+        ];
+
+        let change = derive_change(&events).unwrap();
+
+        assert_eq!(
+            change.metadata.work_started_change_id,
+            Some("jjstart123".to_string())
+        );
+        assert_eq!(
+            change.metadata.work_completed_change_id,
+            Some("jjcomplete456".to_string())
+        );
+    }
+
+    #[test]
+    fn work_started_helper_creates_correct_event() {
+        let event = Event::work_started("abc1".to_string(), "jjchangeid".to_string());
+
+        assert_eq!(event.change_id, "abc1");
+        match &event.data {
+            EventData::WorkStarted { change_id } => {
+                assert_eq!(change_id, "jjchangeid");
+            }
+            _ => panic!("Expected WorkStarted event"),
+        }
+    }
+
+    #[test]
+    fn work_completed_helper_creates_correct_event() {
+        let event = Event::work_completed("abc1".to_string(), "jjchangeid".to_string());
+
+        assert_eq!(event.change_id, "abc1");
+        match &event.data {
+            EventData::WorkCompleted { change_id } => {
+                assert_eq!(change_id, "jjchangeid");
+            }
+            _ => panic!("Expected WorkCompleted event"),
+        }
     }
 }

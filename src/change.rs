@@ -296,6 +296,12 @@ pub struct ChangeMetadata {
     /// Target release version for this change (required, defaults to "unscheduled")
     #[serde(default = "default_target_release")]
     pub target_release: String,
+    /// jj change-id where work started (from WorkStarted event)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_started_change_id: Option<String>,
+    /// jj change-id that implements the fix (from WorkCompleted event)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_completed_change_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -432,6 +438,16 @@ impl Change {
     /// Returns true if this change is unscheduled (not assigned to a release)
     pub fn is_unscheduled(&self) -> bool {
         self.metadata.target_release == crate::release::UNSCHEDULED_RELEASE
+    }
+
+    /// Returns the jj change-id where work started, if recorded
+    pub fn work_started_change_id(&self) -> Option<&str> {
+        self.metadata.work_started_change_id.as_deref()
+    }
+
+    /// Returns the jj change-id that implements the fix, if recorded
+    pub fn work_completed_change_id(&self) -> Option<&str> {
+        self.metadata.work_completed_change_id.as_deref()
     }
 }
 

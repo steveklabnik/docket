@@ -244,6 +244,24 @@ pub fn log(id: &str, json: bool) -> Result<()> {
                 );
                 println!("    Target release: {}", release.cyan());
             }
+            EventData::WorkStarted { change_id } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "work_started".green(),
+                    actor.dimmed()
+                );
+                println!("    jj change-id: {}", change_id.cyan());
+            }
+            EventData::WorkCompleted { change_id } => {
+                println!(
+                    "{} {} [{}]",
+                    timestamp.to_string().dimmed(),
+                    "work_completed".green().bold(),
+                    actor.dimmed()
+                );
+                println!("    jj change-id: {}", change_id.cyan());
+            }
         }
         println!();
     }
