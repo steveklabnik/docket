@@ -13,6 +13,25 @@ use crate::release::{
     UNSCHEDULED_RELEASE,
 };
 
+/// Storage mode for docket data.
+///
+/// Docket supports two storage modes:
+/// - `FileSystem`: Legacy mode where `.docket/` directory is in the working tree
+/// - `StateBranch`: New mode where `.docket/` is stored on an orphan state branch
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreMode {
+    /// Legacy: .docket in working tree
+    FileSystem {
+        /// Path to the .docket directory
+        root: PathBuf,
+    },
+    /// New: .docket on orphan state branch
+    StateBranch {
+        /// Path to the repository root (containing .jj or .git)
+        repo_root: PathBuf,
+    },
+}
+
 const DOCKET_DIR: &str = ".docket";
 const CHANGES_DIR: &str = "changes";
 const RELEASES_DIR: &str = "releases";
@@ -20,7 +39,15 @@ const LEGACY_BUGS_DIR: &str = "bugs";
 const ID_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const ID_LENGTH: usize = 4;
 
+/// Name of the bookmark/branch used for state branch storage
+pub const STATE_BRANCH_NAME: &str = "docket-state";
+
+#[derive(Debug)]
 pub struct Store {
+    /// Storage mode (FileSystem or StateBranch)
+    pub mode: StoreMode,
+    /// Path to the .docket directory (for FileSystem mode, this is the actual path;
+    /// for StateBranch mode, this will be a temporary directory in the future)
     root: PathBuf,
 }
 
@@ -32,13 +59,36 @@ impl Store {
     }
 
     /// Find .docket/ directory by walking up from specified directory
+    ///
+    /// Detection order:
+    /// 1. Find repo root (look for .jj or .git)
+    /// 2. Check if docket-state bookmark exists → StateBranch mode
+    /// 3. Check if .docket directory exists → FileSystem mode
+    /// 4. Neither → error
     pub fn open_from(start: &Path) -> Result<Self> {
         let mut current = start.to_path_buf();
 
+        // Track if we find a repo root (for potential state branch mode)
+        let mut repo_root: Option<PathBuf> = None;
+
         loop {
+            // Check for repo root (.jj or .git)
+            if repo_root.is_none()
+                && (current.join(".jj").is_dir() || current.join(".git").exists())
+            {
+                repo_root = Some(current.clone());
+            }
+
+            // Check for .docket directory (FileSystem mode)
             let docket_path = current.join(DOCKET_DIR);
             if docket_path.is_dir() {
-                let store = Store { root: docket_path };
+                let mode = StoreMode::FileSystem {
+                    root: docket_path.clone(),
+                };
+                let store = Store {
+                    mode,
+                    root: docket_path,
+                };
                 // Migrate from legacy bugs/ directory if needed
                 store.migrate_bugs_to_changes()?;
                 // Ensure releases directory exists (for repos created before releases feature)
@@ -48,11 +98,89 @@ impl Store {
             }
 
             if !current.pop() {
+                break;
+            }
+        }
+
+        // If we found a repo root, check for state branch
+        if let Some(repo_root) = repo_root {
+            if Self::has_state_branch(&repo_root)? {
+                // StateBranch mode detected - for now, return an error since
+                // the actual implementation of reading from state branch is in a
+                // separate bug (f6wk). This branch detection is the foundation.
                 return Err(anyhow!(
-                    "not a docket repository (or any parent): .docket directory not found.\n\
-                     Run 'docket init' to initialize a new docket repository."
+                    "docket state branch detected but StateBranch mode is not yet implemented.\n\
+                     This repository uses the new state branch storage. Support coming soon."
                 ));
             }
+        }
+
+        Err(anyhow!(
+            "not a docket repository (or any parent): .docket directory not found.\n\
+             Run 'docket init' to initialize a new docket repository."
+        ))
+    }
+
+    /// Check if the docket-state branch/bookmark exists in a repository
+    fn has_state_branch(repo_root: &Path) -> Result<bool> {
+        // Check for jj first (preferred)
+        if repo_root.join(".jj").is_dir() {
+            return Self::has_jj_bookmark(repo_root, STATE_BRANCH_NAME);
+        }
+
+        // Fall back to git
+        if repo_root.join(".git").exists() {
+            return Self::has_git_branch(repo_root, STATE_BRANCH_NAME);
+        }
+
+        Ok(false)
+    }
+
+    /// Check if a jj bookmark exists
+    fn has_jj_bookmark(repo_root: &Path, bookmark_name: &str) -> Result<bool> {
+        use std::process::Command;
+
+        let output = Command::new("jj")
+            .args([
+                "bookmark",
+                "list",
+                "--repository",
+                repo_root.to_str().unwrap_or("."),
+            ])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                // jj bookmark list output format: "bookmark_name: commit_id"
+                Ok(stdout.lines().any(|line| {
+                    line.split(':').next().map(|name| name.trim()) == Some(bookmark_name)
+                }))
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// Check if a git branch exists
+    fn has_git_branch(repo_root: &Path, branch_name: &str) -> Result<bool> {
+        use std::process::Command;
+
+        let output = Command::new("git")
+            .args([
+                "-C",
+                repo_root.to_str().unwrap_or("."),
+                "branch",
+                "--list",
+                branch_name,
+            ])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                Ok(!stdout.trim().is_empty())
+            }
+            _ => Ok(false),
         }
     }
 
@@ -62,7 +190,7 @@ impl Store {
         Self::init_at(&current)
     }
 
-    /// Initialize a new .docket/ directory at specified location
+    /// Initialize a new .docket/ directory at specified location (FileSystem mode)
     pub fn init_at(path: &Path) -> Result<Self> {
         let root = path.join(DOCKET_DIR);
 
@@ -83,7 +211,8 @@ impl Store {
         fs::write(&gitignore_path, ".cache/\n")
             .with_context(|| format!("failed to create {}", gitignore_path.display()))?;
 
-        let store = Store { root };
+        let mode = StoreMode::FileSystem { root: root.clone() };
+        let store = Store { mode, root };
 
         // Create the special "unscheduled" release
         store.ensure_unscheduled_release()?;
@@ -561,6 +690,16 @@ impl Store {
     /// Get the root .docket directory path
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Check if the store is in FileSystem mode
+    pub fn is_filesystem_mode(&self) -> bool {
+        matches!(self.mode, StoreMode::FileSystem { .. })
+    }
+
+    /// Check if the store is in StateBranch mode
+    pub fn is_state_branch_mode(&self) -> bool {
+        matches!(self.mode, StoreMode::StateBranch { .. })
     }
 
     /// Get the directory where workspace directories (ws-*) are located.
@@ -1256,5 +1395,112 @@ mod tests {
                 serde_json::from_str::<Event>(line).unwrap();
             }
         }
+    }
+
+    // ========================================================================
+    // StoreMode Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn store_mode_filesystem_on_init() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init_at(dir.path()).unwrap();
+
+        assert!(store.is_filesystem_mode());
+        assert!(!store.is_state_branch_mode());
+
+        match &store.mode {
+            StoreMode::FileSystem { root } => {
+                assert_eq!(root, &dir.path().join(DOCKET_DIR));
+            }
+            StoreMode::StateBranch { .. } => {
+                panic!("Expected FileSystem mode");
+            }
+        }
+    }
+
+    #[test]
+    fn store_mode_filesystem_on_open() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Initialize a store
+        Store::init_at(dir.path()).unwrap();
+
+        // Open it again
+        let store = Store::open_from(dir.path()).unwrap();
+
+        assert!(store.is_filesystem_mode());
+        assert!(!store.is_state_branch_mode());
+    }
+
+    #[test]
+    fn store_mode_filesystem_from_subdirectory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Initialize a store
+        Store::init_at(dir.path()).unwrap();
+
+        // Create a subdirectory and open from there
+        let subdir = dir.path().join("src").join("deeply").join("nested");
+        fs::create_dir_all(&subdir).unwrap();
+
+        let store = Store::open_from(&subdir).unwrap();
+
+        assert!(store.is_filesystem_mode());
+        assert_eq!(store.root(), dir.path().join(DOCKET_DIR));
+    }
+
+    #[test]
+    fn store_mode_enum_equality() {
+        let root = PathBuf::from("/test/path/.docket");
+        let mode1 = StoreMode::FileSystem { root: root.clone() };
+        let mode2 = StoreMode::FileSystem { root: root.clone() };
+        let mode3 = StoreMode::FileSystem {
+            root: PathBuf::from("/other/path/.docket"),
+        };
+        let mode4 = StoreMode::StateBranch {
+            repo_root: PathBuf::from("/test/path"),
+        };
+
+        assert_eq!(mode1, mode2);
+        assert_ne!(mode1, mode3);
+        assert_ne!(mode1, mode4);
+    }
+
+    #[test]
+    fn store_mode_clone() {
+        let root = PathBuf::from("/test/path/.docket");
+        let mode = StoreMode::FileSystem { root };
+        let cloned = mode.clone();
+
+        assert_eq!(mode, cloned);
+    }
+
+    #[test]
+    fn store_mode_debug() {
+        let mode = StoreMode::FileSystem {
+            root: PathBuf::from("/test"),
+        };
+        let debug_str = format!("{:?}", mode);
+        assert!(debug_str.contains("FileSystem"));
+        assert!(debug_str.contains("/test"));
+    }
+
+    #[test]
+    fn open_fails_without_docket_dir() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Don't initialize - should fail to open
+        let result = Store::open_from(dir.path());
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not a docket repository"));
+    }
+
+    #[test]
+    fn state_branch_name_constant() {
+        // Verify the constant is set correctly
+        assert_eq!(STATE_BRANCH_NAME, "docket-state");
     }
 }
