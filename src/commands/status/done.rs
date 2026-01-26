@@ -258,7 +258,7 @@ pub fn done(
         }
     }
 
-    // Determine if workspace operations are needed
+    // Determine if workspace operations are needed (for later logic)
     let needs_workspace = describe || squash || submit;
 
     // Track if we switched directories (so we can switch back)
@@ -268,8 +268,8 @@ pub fn done(
     // Check if we're running from a workspace
     let mut in_workspace = jj::is_in_workspace(&bug_id);
 
-    // If workspace operations are requested and not in workspace, try to switch to it
-    if needs_workspace && !in_workspace {
+    // If not in workspace, try to switch to it so status event is written there
+    if !in_workspace {
         if let Some(workspace_dir) = jj::find_workspace_dir(&bug_id) {
             println!(
                 "{} Found workspace at {}, switching...",
