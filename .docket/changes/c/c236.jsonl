@@ -1,0 +1,3 @@
+{"version":1,"id":"3298cce6-f57e-4e5b-8096-670383cb6252","change_id":"c236","timestamp":"2026-01-26T03:12:43.343947Z","type":"created","data":{"title":"Fix done command writing status event to wrong workspace","priority":"medium","body":""},"actor":"Steves-MacBook-Pro.local"}
+{"version":1,"id":"24a785d8-8f95-4469-92bd-0af5c2a09254","change_id":"c236","timestamp":"2026-01-26T03:12:43.344130Z","type":"status_changed","data":{"from":"draft","to":"done"},"actor":"Steves-MacBook-Pro.local"}
+{"version":1,"id":"56300c67-0b5e-4260-97c1-9e7bd516a5de","change_id":"c236","timestamp":"2026-01-26T03:12:43.344155Z","type":"changelog_type_set","data":{"changelog_type":"fix"},"actor":"Steves-MacBook-Pro.local"}

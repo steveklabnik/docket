@@ -298,7 +298,7 @@ pub fn done(
 
     // Switch to workspace if needed for jj operations
     let needs_workspace_switch = (do_describe || squash || submit) && !in_workspace;
-    if needs_workspace_switch {
+    let store = if needs_workspace_switch {
         if let Some(ref ws_dir) = workspace_dir {
             println!(
                 "{} Found workspace at {}, switching...",
@@ -308,11 +308,15 @@ pub fn done(
             std::env::set_current_dir(ws_dir)?;
             switched_to_workspace = true;
             in_workspace = true;
+            // Re-open store from workspace so events are written to the workspace's
+            // .docket/ directory, making them part of the workspace commit
+            Store::open()?
+        } else {
+            store
         }
-    }
-
-    // Note: We keep using the original store opened above for event writes.
-    // The directory switch is only for jj commands (squash, describe, submit).
+    } else {
+        store
+    };
 
     // Perform squash first (before describe, so the squashed commit gets the message)
     if squash && in_workspace {
