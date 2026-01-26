@@ -561,6 +561,28 @@ pub enum Commands {
         parent: Option<String>,
     },
 
+    /// Show dependency tree for a change
+    ///
+    /// Displays what blocks a change (blocked by) and what it blocks.
+    /// Useful for understanding the dependency chain around a specific change.
+    Tree {
+        /// Change ID (prefix match supported)
+        #[arg(add = ArgValueCompleter::new(complete_change_id))]
+        id: String,
+
+        /// Show only ancestors (what blocks this change)
+        #[arg(long)]
+        up: bool,
+
+        /// Show only descendants (what this change blocks)
+        #[arg(long)]
+        down: bool,
+
+        /// Limit tree depth
+        #[arg(long)]
+        depth: Option<usize>,
+    },
+
     /// Visualize the change graph (DAG)
     ///
     /// Shows the hierarchy of changes and their dependencies as an ASCII graph.

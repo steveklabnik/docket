@@ -252,6 +252,12 @@ fn main() -> Result<()> {
         }
         Commands::Scratch { id, content } => commands::scratch(&id, &content),
         Commands::Reparent { id, parent } => commands::reparent(&id, parent.as_deref()),
+        Commands::Tree {
+            id,
+            up,
+            down,
+            depth,
+        } => commands::tree(&id, up, down, depth),
         Commands::Graph {
             id,
             all,
