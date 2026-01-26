@@ -286,6 +286,13 @@ pub enum Commands {
         tag: String,
     },
 
+    /// List all tags in use with bug counts
+    Tags {
+        /// Sort by count (descending) instead of alphabetically
+        #[arg(long)]
+        by_count: bool,
+    },
+
     /// Add a dependency: change becomes blocked by another change
     ///
     /// This creates an inter-change dependency. The change won't show up in "ready to work"

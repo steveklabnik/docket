@@ -156,6 +156,7 @@ fn main() -> Result<()> {
         }
         Commands::Tag { id, tag } => commands::tag(&id, &tag),
         Commands::Untag { id, tag } => commands::untag(&id, &tag),
+        Commands::Tags { by_count } => commands::tags(by_count),
         Commands::Depend { id, on } => commands::depend(&id, &on),
         Commands::Undepend { id, on } => commands::undepend(&id, &on),
         Commands::Approve { id } => commands::approve(&id),
