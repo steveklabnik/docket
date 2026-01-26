@@ -369,6 +369,29 @@ pub fn read_events(path: &Path) -> Result<Vec<Event>> {
     Ok(events)
 }
 
+/// Parse events from JSONL content string
+///
+/// This is used for reading events from sources other than local files,
+/// such as from the state branch via jj commands.
+pub fn parse_jsonl_content(content: &str) -> Result<Vec<Event>> {
+    let mut events = Vec::new();
+
+    for (line_num, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let event: Event = serde_json::from_str(trimmed)
+            .with_context(|| format!("failed to parse event on line {}", line_num + 1))?;
+        events.push(event);
+    }
+
+    // Sort by timestamp to ensure correct replay order
+    events.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+    Ok(events)
+}
+
 /// Derive current change state by replaying events
 pub fn derive_change(events: &[Event]) -> Result<Change> {
     if events.is_empty() {
@@ -1046,5 +1069,49 @@ mod tests {
             }
             _ => panic!("Expected WorkCompleted event"),
         }
+    }
+
+    #[test]
+    fn parse_jsonl_content_parses_events() {
+        let content = r#"{"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"created","data":{"title":"Test","priority":"medium","body":"Body"}}
+{"id":"e2","bug_id":"abc1","timestamp":"2024-01-02T00:00:00Z","type":"status_changed","data":{"from":"draft","to":"approved"}}"#;
+
+        let events = super::parse_jsonl_content(content).unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0].data, EventData::Created { .. }));
+        assert!(matches!(events[1].data, EventData::StatusChanged { .. }));
+    }
+
+    #[test]
+    fn parse_jsonl_content_skips_empty_lines() {
+        let content = r#"{"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"created","data":{"title":"Test","priority":"medium","body":"Body"}}
+
+
+{"id":"e2","bug_id":"abc1","timestamp":"2024-01-02T00:00:00Z","type":"status_changed","data":{"from":"draft","to":"approved"}}"#;
+
+        let events = super::parse_jsonl_content(content).unwrap();
+
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn parse_jsonl_content_sorts_by_timestamp() {
+        // Events out of order
+        let content = r#"{"id":"e2","bug_id":"abc1","timestamp":"2024-01-02T00:00:00Z","type":"status_changed","data":{"from":"draft","to":"approved"}}
+{"id":"e1","bug_id":"abc1","timestamp":"2024-01-01T00:00:00Z","type":"created","data":{"title":"Test","priority":"medium","body":"Body"}}"#;
+
+        let events = super::parse_jsonl_content(content).unwrap();
+
+        assert_eq!(events.len(), 2);
+        // Should be sorted by timestamp, so Created first
+        assert!(matches!(events[0].data, EventData::Created { .. }));
+        assert!(matches!(events[1].data, EventData::StatusChanged { .. }));
+    }
+
+    #[test]
+    fn parse_jsonl_content_empty_string() {
+        let events = super::parse_jsonl_content("").unwrap();
+        assert!(events.is_empty());
     }
 }

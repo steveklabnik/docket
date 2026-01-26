@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use crate::change::Change;
+use crate::commands::status::jj;
 use crate::event::{self, Event};
 use crate::release::{
     self, append_release_event, derive_release, read_release_events, Release, ReleaseEvent,
@@ -105,13 +106,16 @@ impl Store {
         // If we found a repo root, check for state branch
         if let Some(repo_root) = repo_root {
             if Self::has_state_branch(&repo_root)? {
-                // StateBranch mode detected - for now, return an error since
-                // the actual implementation of reading from state branch is in a
-                // separate bug (f6wk). This branch detection is the foundation.
-                return Err(anyhow!(
-                    "docket state branch detected but StateBranch mode is not yet implemented.\n\
-                     This repository uses the new state branch storage. Support coming soon."
-                ));
+                // StateBranch mode - data is stored on the docket-state branch
+                // The root path is virtual (used for consistency but not for actual file access)
+                let virtual_root = repo_root.join(DOCKET_DIR);
+                let mode = StoreMode::StateBranch {
+                    repo_root: repo_root.clone(),
+                };
+                return Ok(Store {
+                    mode,
+                    root: virtual_root,
+                });
             }
         }
 
@@ -340,6 +344,12 @@ impl Store {
 
     /// List all changes (searches both sharded and flat structures)
     pub fn list_changes(&self) -> Result<Vec<Change>> {
+        // Dispatch to correct implementation based on mode
+        if self.is_state_branch_mode() {
+            return self.list_from_state_branch();
+        }
+
+        // FileSystem mode
         let changes_dir = self.changes_dir();
 
         // Pattern for sharded structure: .docket/changes/*/*.jsonl
@@ -407,7 +417,12 @@ impl Store {
 
     /// Get a specific change by ID (supports prefix and fuzzy matching)
     pub fn get_change(&self, id: &str) -> Result<Change> {
-        // First try exact match (checks sharded then flat)
+        // Dispatch to correct implementation based on mode
+        if self.is_state_branch_mode() {
+            return self.get_change_state_branch(id);
+        }
+
+        // FileSystem mode: First try exact match (checks sharded then flat)
         if let Some(path) = self.find_change_path(id) {
             let events = event::read_events(&path)?;
             return event::derive_change(&events);
@@ -701,6 +716,105 @@ impl Store {
     pub fn is_state_branch_mode(&self) -> bool {
         matches!(self.mode, StoreMode::StateBranch { .. })
     }
+
+    // ========================================================================
+    // State Branch Reading Methods
+    // ========================================================================
+
+    /// Read change events from the state branch.
+    /// Used when in StateBranch mode.
+    fn read_from_state_branch(&self, change_id: &str) -> Result<Vec<Event>> {
+        // Build the path: .docket/changes/{first_char}/{id}.jsonl
+        let shard = change_id
+            .chars()
+            .next()
+            .ok_or_else(|| anyhow!("empty change ID"))?;
+        let path = format!(".docket/changes/{}/{}.jsonl", shard, change_id);
+
+        let content = jj::read_state_file(&path)?;
+        event::parse_jsonl_content(&content)
+    }
+
+    /// List all changes from the state branch.
+    /// Used when in StateBranch mode.
+    fn list_from_state_branch(&self) -> Result<Vec<Change>> {
+        // Get all change files from state branch
+        // Pattern: .docket/changes/*/*.jsonl
+        let files = jj::list_state_files(".docket/changes/*/*.jsonl")?;
+
+        let mut changes = Vec::new();
+
+        for file_path in files {
+            // Read and parse each change file
+            match jj::read_state_file(&file_path) {
+                Ok(content) => match event::parse_jsonl_content(&content) {
+                    Ok(events) => match event::derive_change(&events) {
+                        Ok(change) => changes.push(change),
+                        Err(e) => {
+                            eprintln!("warning: failed to derive change from {}: {}", file_path, e);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("warning: failed to parse events from {}: {}", file_path, e);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("warning: failed to read {}: {}", file_path, e);
+                }
+            }
+        }
+
+        // Sort by created date, newest first
+        changes.sort_by(|a, b| b.metadata.created.cmp(&a.metadata.created));
+
+        Ok(changes)
+    }
+
+    /// Get a specific change by ID from the state branch.
+    /// Supports prefix matching for convenience.
+    fn get_change_state_branch(&self, id: &str) -> Result<Change> {
+        // Try exact match first
+        if let Ok(events) = self.read_from_state_branch(id) {
+            if !events.is_empty() {
+                return event::derive_change(&events);
+            }
+        }
+
+        // Try prefix match by listing all changes and filtering
+        let files = jj::list_state_files(".docket/changes/*/*.jsonl")?;
+
+        let mut prefix_matches: Vec<String> = Vec::new();
+
+        for file_path in &files {
+            // Extract change ID from path: .docket/changes/a/abcd.jsonl -> abcd
+            if let Some(file_name) = file_path.rsplit('/').next() {
+                if let Some(change_id) = file_name.strip_suffix(".jsonl") {
+                    if change_id.starts_with(id) {
+                        prefix_matches.push(change_id.to_string());
+                    }
+                }
+            }
+        }
+
+        match prefix_matches.len() {
+            0 => Err(anyhow!(
+                "change not found: '{}'\n\
+                 Run 'docket list' to see all changes, or 'docket new' to create one.",
+                id
+            )),
+            1 => {
+                let events = self.read_from_state_branch(&prefix_matches[0])?;
+                event::derive_change(&events)
+            }
+            _ => Err(anyhow!(
+                "ambiguous change ID '{}', matches: {}",
+                id,
+                prefix_matches.join(", ")
+            )),
+        }
+    }
+
+    // ========================================================================
 
     /// Get the directory where workspace directories (ws-*) are located.
     /// This is the parent of .docket, unless we're inside a workspace directory,
