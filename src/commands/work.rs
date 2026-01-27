@@ -1,10 +1,13 @@
 use anyhow::{anyhow, Context, Result};
 use colored::Colorize;
+use std::path::Path;
 use std::process::Command;
 
 use crate::change::Status;
 use crate::commands::epic;
+use crate::commands::status::jj;
 use crate::config::Config;
+use crate::event::Event;
 use crate::store::Store;
 
 /// Start working on a change by creating a jj workspace and launching Claude.
@@ -218,6 +221,34 @@ pub fn work(id: &str, skip_permissions: bool, auto: bool) -> Result<()> {
     // Change to workspace directory
     std::env::set_current_dir(&workspace_path)
         .context("failed to change to workspace directory")?;
+
+    // Capture the jj change-id from the workspace and record WorkStarted event
+    let workspace_path_ref = Path::new(&workspace_path);
+    match jj::current_change_id_in(workspace_path_ref) {
+        Ok(jj_change_id) => {
+            let event = Event::work_started(bug_id.clone(), jj_change_id.clone());
+            if let Err(e) = store.append_event(&event) {
+                eprintln!(
+                    "{} Warning: failed to record WorkStarted event: {}",
+                    "!".yellow(),
+                    e
+                );
+            } else {
+                println!(
+                    "{} Recorded work starting on jj change {}",
+                    "→".blue(),
+                    &jj_change_id[..12.min(jj_change_id.len())]
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "{} Warning: could not get jj change-id: {}",
+                "!".yellow(),
+                e
+            );
+        }
+    }
 
     // Merge CLI flags with config (CLI takes precedence)
     let use_skip_permissions = skip_permissions || config.work.skip_permissions;

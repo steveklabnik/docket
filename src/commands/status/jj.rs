@@ -396,6 +396,38 @@ pub fn current_change_id() -> Result<String> {
     }
 }
 
+/// Get the jj change-id for a specific directory.
+/// Returns the full change ID of the working copy (@) in the given directory.
+pub fn current_change_id_in(dir: &Path) -> Result<String> {
+    let output = Command::new("jj")
+        .args(["log", "-r", "@", "--no-graph", "-T", "change_id"])
+        .current_dir(dir)
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let change_id = String::from_utf8(output.stdout)
+                .context("invalid UTF-8 in change_id output")?
+                .trim()
+                .to_string();
+            if change_id.is_empty() {
+                Err(anyhow!("jj returned empty change_id"))
+            } else {
+                Ok(change_id)
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("jj log failed: {}", stderr.trim()))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(anyhow!(
+            "jj is not installed or not in PATH.\n\
+             Install jj from https://martinvonz.github.io/jj/latest/install-and-setup/"
+        )),
+        Err(e) => Err(anyhow!("failed to run jj: {}", e)),
+    }
+}
+
 /// Check if the docket-state bookmark exists.
 /// Returns true if the bookmark exists, false otherwise.
 pub fn has_state_branch() -> Result<bool> {

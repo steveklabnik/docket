@@ -64,6 +64,17 @@ pub fn show(id: &str) -> Result<()> {
         println!("{:12} {}", "Release:".dimmed(), release_str.cyan());
     }
 
+    // Show jj change-id where work started
+    if let Some(jj_change_id) = bug.work_started_change_id() {
+        // Display truncated change-id (first 12 chars like jj does by default)
+        let display_id = if jj_change_id.len() > 12 {
+            &jj_change_id[..12]
+        } else {
+            jj_change_id
+        };
+        println!("{:12} {}", "Working:".dimmed(), display_id.cyan());
+    }
+
     // Show tags if any
     if !bug.tags().is_empty() {
         let mut tags: Vec<_> = bug.tags().iter().collect();
