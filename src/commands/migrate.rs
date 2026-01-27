@@ -265,6 +265,15 @@ fn write_files_to_state_branch(
         return Err(anyhow!("failed to edit state branch: {}", stderr.trim()));
     }
 
+    // Clean up the working directory: delete everything except .docket/, .jj/, .git/
+    // This is necessary because the state branch doesn't have a .gitignore,
+    // so files like target/ that were gitignored on the original branch
+    // would be seen as new untracked files by jj
+    if let Err(e) = cleanup_working_directory(workspace_root) {
+        restore();
+        return Err(e);
+    }
+
     // Write all files to the working copy
     let workspace_path = Path::new(workspace_root);
     for (_source, dest_path, content) in files {
@@ -371,6 +380,43 @@ fn remove_docket_from_working_copy(workspace_root: &str, docket_root: &Path) -> 
             "!".yellow(),
             stderr.trim()
         );
+    }
+
+    Ok(())
+}
+
+/// Clean up the working directory when on the state branch.
+///
+/// The state branch doesn't have a .gitignore, so files that were gitignored
+/// on the original branch (like target/) would appear as new untracked files.
+/// This function deletes everything in the working directory except:
+/// - .docket/ (the state we're managing)
+/// - .jj/ (jj's internal state)
+/// - .git/ (git's internal state for colocated repos)
+fn cleanup_working_directory(workspace_root: &str) -> Result<()> {
+    let workspace_path = Path::new(workspace_root);
+
+    let entries = fs::read_dir(workspace_path)
+        .with_context(|| format!("failed to read directory {}", workspace_root))?;
+
+    for entry in entries {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", workspace_root))?;
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+
+        // Keep .docket/, .jj/, and .git/
+        if name == ".docket" || name == ".jj" || name == ".git" {
+            continue;
+        }
+
+        let path = entry.path();
+        if path.is_dir() {
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("failed to remove directory {}", path.display()))?;
+        } else {
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove file {}", path.display()))?;
+        }
     }
 
     Ok(())
