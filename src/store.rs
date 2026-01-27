@@ -63,14 +63,16 @@ impl Store {
     ///
     /// Detection order:
     /// 1. Find repo root (look for .jj or .git)
-    /// 2. Check if docket-state bookmark exists → StateBranch mode
-    /// 3. Check if .docket directory exists → FileSystem mode
+    /// 2. Check if docket-state bookmark exists → StateBranch mode (takes priority)
+    /// 3. Check if .docket directory exists → FileSystem mode (fallback)
     /// 4. Neither → error
     pub fn open_from(start: &Path) -> Result<Self> {
         let mut current = start.to_path_buf();
 
         // Track if we find a repo root (for potential state branch mode)
         let mut repo_root: Option<PathBuf> = None;
+        // Track if we find a .docket directory (for potential filesystem mode)
+        let mut docket_dir: Option<PathBuf> = None;
 
         loop {
             // Check for repo root (.jj or .git)
@@ -80,22 +82,12 @@ impl Store {
                 repo_root = Some(current.clone());
             }
 
-            // Check for .docket directory (FileSystem mode)
-            let docket_path = current.join(DOCKET_DIR);
-            if docket_path.is_dir() {
-                let mode = StoreMode::FileSystem {
-                    root: docket_path.clone(),
-                };
-                let store = Store {
-                    mode,
-                    root: docket_path,
-                };
-                // Migrate from legacy bugs/ directory if needed
-                store.migrate_bugs_to_changes()?;
-                // Ensure releases directory exists (for repos created before releases feature)
-                store.ensure_releases_dir()?;
-                store.ensure_unscheduled_release()?;
-                return Ok(store);
+            // Check for .docket directory (potential FileSystem mode)
+            if docket_dir.is_none() {
+                let docket_path = current.join(DOCKET_DIR);
+                if docket_path.is_dir() {
+                    docket_dir = Some(docket_path);
+                }
             }
 
             if !current.pop() {
@@ -103,9 +95,10 @@ impl Store {
             }
         }
 
-        // If we found a repo root, check for state branch
-        if let Some(repo_root) = repo_root {
-            if Self::has_state_branch(&repo_root)? {
+        // Priority 1: If we found a repo root, check for state branch first
+        // StateBranch mode takes priority over FileSystem mode when both exist
+        if let Some(ref repo_root) = repo_root {
+            if Self::has_state_branch(repo_root)? {
                 // StateBranch mode - data is stored on the docket-state branch
                 // The root path is virtual (used for consistency but not for actual file access)
                 let virtual_root = repo_root.join(DOCKET_DIR);
@@ -117,6 +110,23 @@ impl Store {
                     root: virtual_root,
                 });
             }
+        }
+
+        // Priority 2: Fall back to FileSystem mode if .docket directory exists
+        if let Some(docket_path) = docket_dir {
+            let mode = StoreMode::FileSystem {
+                root: docket_path.clone(),
+            };
+            let store = Store {
+                mode,
+                root: docket_path,
+            };
+            // Migrate from legacy bugs/ directory if needed
+            store.migrate_bugs_to_changes()?;
+            // Ensure releases directory exists (for repos created before releases feature)
+            store.ensure_releases_dir()?;
+            store.ensure_unscheduled_release()?;
+            return Ok(store);
         }
 
         Err(anyhow!(
@@ -309,6 +319,16 @@ impl Store {
             return Some(flat);
         }
         None
+    }
+
+    /// Check if a change exists (works in both FileSystem and StateBranch modes)
+    fn change_exists(&self, id: &str) -> Result<bool> {
+        if self.is_state_branch_mode() {
+            let all_ids = self.list_all_change_ids_state_branch()?;
+            Ok(all_ids.contains(&id.to_string()))
+        } else {
+            Ok(self.find_change_path(id).is_some())
+        }
     }
 
     /// Migrate a change file from flat to sharded structure if needed
@@ -515,6 +535,12 @@ impl Store {
 
     /// Find all change IDs in the repository (for fuzzy matching)
     fn list_all_change_ids(&self) -> Result<Vec<String>> {
+        // Dispatch to correct implementation based on mode
+        if self.is_state_branch_mode() {
+            return self.list_all_change_ids_state_branch();
+        }
+
+        // FileSystem mode
         let changes_dir = self.changes_dir();
         let mut ids = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -545,6 +571,22 @@ impl Store {
             }
         }
 
+        Ok(ids)
+    }
+
+    /// List all change IDs from the state branch
+    fn list_all_change_ids_state_branch(&self) -> Result<Vec<String>> {
+        let files = jj::list_state_files(".docket/changes/*/*.jsonl")?;
+        let ids: Vec<String> = files
+            .iter()
+            .filter_map(|path| {
+                // Extract ID from path like ".docket/changes/a/abc1.jsonl"
+                let path = std::path::Path::new(path);
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
         Ok(ids)
     }
 
@@ -647,7 +689,12 @@ impl Store {
 
     /// Resolve a change ID prefix to the full ID (supports prefix and fuzzy matching)
     pub fn resolve_id(&self, id: &str) -> Result<String> {
-        // First try exact match (checks sharded then flat)
+        // Dispatch to correct implementation based on mode
+        if self.is_state_branch_mode() {
+            return self.resolve_id_state_branch(id);
+        }
+
+        // FileSystem mode: First try exact match (checks sharded then flat)
         if self.find_change_path(id).is_some() {
             return Ok(id.to_string());
         }
@@ -695,6 +742,49 @@ impl Store {
         }
     }
 
+    /// Resolve a change ID in StateBranch mode
+    fn resolve_id_state_branch(&self, id: &str) -> Result<String> {
+        let all_ids = self.list_all_change_ids_state_branch()?;
+
+        // First try exact match
+        if all_ids.contains(&id.to_string()) {
+            return Ok(id.to_string());
+        }
+
+        // Try prefix match
+        let prefix_matches: Vec<_> = all_ids
+            .iter()
+            .filter(|change_id| change_id.starts_with(id))
+            .cloned()
+            .collect();
+
+        match prefix_matches.len() {
+            0 => {
+                // No prefix matches, try fuzzy matching
+                let fuzzy_matches = self.find_fuzzy_matches(id)?;
+                match fuzzy_matches.len() {
+                    0 => Err(anyhow!(
+                        "change not found: '{}'\n\
+                         Run 'docket list' to see all changes.",
+                        id
+                    )),
+                    1 => Ok(fuzzy_matches[0].clone()),
+                    _ => Err(anyhow!(
+                        "ambiguous change ID '{}', fuzzy matches: {}",
+                        id,
+                        fuzzy_matches.join(", ")
+                    )),
+                }
+            }
+            1 => Ok(prefix_matches[0].clone()),
+            _ => Err(anyhow!(
+                "ambiguous change ID '{}', matches: {}",
+                id,
+                prefix_matches.join(", ")
+            )),
+        }
+    }
+
     /// Generate a unique change ID
     pub fn generate_id(&self) -> Result<String> {
         let mut rng = rand::thread_rng();
@@ -708,8 +798,8 @@ impl Store {
                 })
                 .collect();
 
-            // Check both sharded and flat paths to ensure uniqueness
-            if self.find_change_path(&id).is_none() {
+            // Check uniqueness across all modes
+            if !self.change_exists(&id)? {
                 return Ok(id);
             }
         }
@@ -849,11 +939,26 @@ impl Store {
         }
 
         match prefix_matches.len() {
-            0 => Err(anyhow!(
-                "change not found: '{}'\n\
-                 Run 'docket list' to see all changes, or 'docket new' to create one.",
-                id
-            )),
+            0 => {
+                // No prefix matches, try fuzzy matching
+                let fuzzy_matches = self.find_fuzzy_matches(id)?;
+                match fuzzy_matches.len() {
+                    0 => Err(anyhow!(
+                        "change not found: '{}'\n\
+                         Run 'docket list' to see all changes, or 'docket new' to create one.",
+                        id
+                    )),
+                    1 => {
+                        let events = self.read_from_state_branch(&fuzzy_matches[0])?;
+                        event::derive_change(&events)
+                    }
+                    _ => Err(anyhow!(
+                        "ambiguous change ID '{}', fuzzy matches: {}",
+                        id,
+                        fuzzy_matches.join(", ")
+                    )),
+                }
+            }
             1 => {
                 let events = self.read_from_state_branch(&prefix_matches[0])?;
                 event::derive_change(&events)

@@ -538,108 +538,114 @@ pub fn list_state_files(pattern: &str) -> Result<Vec<String>> {
 /// Write content to a file on the state branch atomically.
 ///
 /// This function performs an atomic write by:
-/// 1. Creating a new child commit of docket-state (without editing working copy)
-/// 2. Writing the file content to that commit
-/// 3. Describing the commit with the provided message
-/// 4. Squashing the commit back into docket-state
+/// 1. Saving the current change ID
+/// 2. Editing the state branch (switching working copy)
+/// 3. Cleaning up the working directory (orphan branch has no .gitignore)
+/// 4. Writing the file to disk
+/// 5. Describing the commit
+/// 6. Returning to the original change
 ///
-/// If any step fails, the state branch is left unchanged.
+/// If any step fails, the function attempts to restore the original state.
 pub fn write_to_state_branch(path: &str, content: &str, message: &str) -> Result<()> {
-    // Step 1: Create a new commit from docket-state without editing it
-    // Using --no-edit to stay at current working copy position
-    let new_output = Command::new("jj")
-        .args(["new", STATE_BRANCH, "--no-edit"])
-        .output()
-        .context("failed to run jj new")?;
+    use std::fs;
 
-    if !new_output.status.success() {
-        let stderr = String::from_utf8_lossy(&new_output.stderr);
-        return Err(anyhow!("jj new {} failed: {}", STATE_BRANCH, stderr.trim()));
-    }
+    // Get workspace root
+    let workspace_root = workspace_root()?;
 
-    // Parse the new commit ID from stdout
-    // jj new --no-edit outputs something like "Created new commit <change_id>"
-    let stdout = String::from_utf8_lossy(&new_output.stdout);
-    let stderr = String::from_utf8_lossy(&new_output.stderr);
+    // Save the current change ID so we can return to it
+    let original_change = current_change_id()?;
 
-    // The change_id is typically in the output - we need to find it
-    // jj typically outputs to stderr for status messages
-    // Look for the change ID pattern (alphanumeric string after "Created new commit")
-    let combined = format!("{}{}", stdout, stderr);
-
-    // Find the new commit - look for a word that looks like a change_id
-    // jj outputs something like "Created new commit pqrstuvw" or similar
-    let new_change_id = combined
-        .lines()
-        .find(|line| line.contains("Created") || line.contains("created"))
-        .and_then(|line| {
-            // Extract the last word which should be the change_id
-            line.split_whitespace().last()
-        })
-        .ok_or_else(|| anyhow!("could not find new commit ID in jj output: {}", combined))?;
-
-    // Clean up helper - abandon the new commit if something goes wrong
-    let cleanup = |change_id: &str| {
-        let _ = Command::new("jj").args(["abandon", change_id]).output();
+    // Helper to restore original change on error
+    let restore = || {
+        let _ = Command::new("jj").args(["edit", &original_change]).output();
     };
 
-    // Step 2: Write the file content to the new commit
-    // Use jj file write with stdin for the content
-    let mut write_cmd = Command::new("jj")
-        .args(["file", "write", "-r", new_change_id, path])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .context("failed to spawn jj file write")?;
-
-    // Write content to stdin
-    if let Some(ref mut stdin) = write_cmd.stdin {
-        use std::io::Write;
-        stdin
-            .write_all(content.as_bytes())
-            .context("failed to write content to jj file write stdin")?;
-    }
-
-    let write_output = write_cmd
-        .wait_with_output()
-        .context("failed to wait for jj file write")?;
-
-    if !write_output.status.success() {
-        let stderr = String::from_utf8_lossy(&write_output.stderr);
-        cleanup(new_change_id);
-        return Err(anyhow!("jj file write failed: {}", stderr.trim()));
-    }
-
-    // Step 3: Describe the commit
-    let describe_output = Command::new("jj")
-        .args(["describe", "-r", new_change_id, "-m", message])
+    // Step 1: Edit the state branch (switch working copy to it)
+    let edit_output = Command::new("jj")
+        .args(["edit", STATE_BRANCH])
         .output()
-        .context("failed to run jj describe")?;
+        .context("failed to run jj edit")?;
 
-    if !describe_output.status.success() {
-        let stderr = String::from_utf8_lossy(&describe_output.stderr);
-        cleanup(new_change_id);
-        return Err(anyhow!("jj describe failed: {}", stderr.trim()));
-    }
-
-    // Step 4: Squash the new commit into docket-state
-    let squash_output = Command::new("jj")
-        .args(["squash", "-r", new_change_id, "--into", STATE_BRANCH])
-        .output()
-        .context("failed to run jj squash")?;
-
-    if !squash_output.status.success() {
-        let stderr = String::from_utf8_lossy(&squash_output.stderr);
-        cleanup(new_change_id);
+    if !edit_output.status.success() {
+        let stderr = String::from_utf8_lossy(&edit_output.stderr);
         return Err(anyhow!(
-            "jj squash into {} failed: {}",
+            "failed to edit {}: {}",
             STATE_BRANCH,
             stderr.trim()
         ));
     }
 
+    // Step 2: Clean up the working directory
+    // The orphan branch doesn't have .gitignore, so gitignored files
+    // (like target/) would appear as untracked. We must clean them up.
+    if let Err(e) = cleanup_working_directory(&workspace_root) {
+        restore();
+        return Err(e);
+    }
+
+    // Step 3: Write the file to the working copy
+    let full_path = Path::new(&workspace_root).join(path);
+
+    // Create parent directories if needed
+    if let Some(parent) = full_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            restore();
+            return Err(anyhow!(
+                "failed to create directory {}: {}",
+                parent.display(),
+                e
+            ));
+        }
+    }
+
+    // Write the file
+    if let Err(e) = fs::write(&full_path, content) {
+        restore();
+        return Err(anyhow!("failed to write {}: {}", full_path.display(), e));
+    }
+
+    // Step 4: Describe the commit (this also snapshots the changes)
+    let describe_output = Command::new("jj")
+        .args(["describe", "-m", message])
+        .output()
+        .context("failed to run jj describe")?;
+
+    if !describe_output.status.success() {
+        let stderr = String::from_utf8_lossy(&describe_output.stderr);
+        restore();
+        return Err(anyhow!("jj describe failed: {}", stderr.trim()));
+    }
+
+    // Step 5: Return to the original change
+    let return_output = Command::new("jj")
+        .args(["edit", &original_change])
+        .output()
+        .context("failed to run jj edit")?;
+
+    if !return_output.status.success() {
+        let stderr = String::from_utf8_lossy(&return_output.stderr);
+        return Err(anyhow!(
+            "failed to return to original change: {}",
+            stderr.trim()
+        ));
+    }
+
     Ok(())
+}
+
+/// Get the jj workspace root directory.
+fn workspace_root() -> Result<String> {
+    let output = Command::new("jj")
+        .args(["workspace", "root"])
+        .output()
+        .context("failed to run jj workspace root")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("jj workspace root failed: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// Clean up the working directory when on an orphan branch.
