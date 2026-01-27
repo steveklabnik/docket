@@ -64,8 +64,16 @@ pub fn init_state_branch() -> Result<bool> {
         return Err(anyhow!("jj new root() failed: {}", stderr.trim()));
     }
 
+    // Clean up the working directory: delete everything except .docket/, .jj/, .git/
+    // This is necessary because the orphan branch doesn't have a .gitignore,
+    // so files like target/ that were gitignored on the original branch
+    // would be seen as new untracked files by jj
+    if let Err(e) = cleanup_working_directory(&workspace_root) {
+        restore_original();
+        return Err(e);
+    }
+
     // Create .docket/changes/.gitkeep in the working copy
-    // Since we're on an orphan from root(), the working directory is essentially empty
     let changes_dir = Path::new(&workspace_root).join(".docket").join("changes");
     if let Err(e) = fs::create_dir_all(&changes_dir) {
         restore_original();
@@ -629,6 +637,45 @@ pub fn write_to_state_branch(path: &str, content: &str, message: &str) -> Result
             STATE_BRANCH,
             stderr.trim()
         ));
+    }
+
+    Ok(())
+}
+
+/// Clean up the working directory when on an orphan branch.
+///
+/// The orphan branch doesn't have a .gitignore, so files that were gitignored
+/// on the original branch (like target/) would appear as new untracked files.
+/// This function deletes everything in the working directory except:
+/// - .docket/ (the state we're managing)
+/// - .jj/ (jj's internal state)
+/// - .git/ (git's internal state for colocated repos)
+fn cleanup_working_directory(workspace_root: &str) -> Result<()> {
+    use std::fs;
+
+    let workspace_path = Path::new(workspace_root);
+
+    let entries = fs::read_dir(workspace_path)
+        .with_context(|| format!("failed to read directory {}", workspace_root))?;
+
+    for entry in entries {
+        let entry = entry.with_context(|| format!("failed to read entry in {}", workspace_root))?;
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+
+        // Keep .docket/, .jj/, and .git/
+        if name == ".docket" || name == ".jj" || name == ".git" {
+            continue;
+        }
+
+        let path = entry.path();
+        if path.is_dir() {
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("failed to remove directory {}", path.display()))?;
+        } else {
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove file {}", path.display()))?;
+        }
     }
 
     Ok(())

@@ -1,3 +1,0 @@
-{"version":1,"id":"c285b5bf-28cb-4bdd-b785-ea87788d2626","change_id":"4uiv","timestamp":"2026-01-26T00:16:31.702363Z","type":"created","data":{"title":"Add docket record command for capturing completed work","priority":"medium","body":""},"actor":"Steves-MacBook-Pro.local"}
-{"version":1,"id":"372d035f-805f-4686-9c82-59cf47698a0b","change_id":"4uiv","timestamp":"2026-01-26T00:16:31.702521Z","type":"status_changed","data":{"from":"draft","to":"done"},"actor":"Steves-MacBook-Pro.local"}
-{"version":1,"id":"5c5420c1-22f7-48dc-be97-99e2adaa1fb5","change_id":"4uiv","timestamp":"2026-01-26T00:16:31.702526Z","type":"changelog_type_set","data":{"changelog_type":"feature"},"actor":"Steves-MacBook-Pro.local"}

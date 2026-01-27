@@ -1,7 +1,0 @@
-{
-  "body": "## Goal\n\nRemove the current.json mechanism now that event logs provide the source of truth.\n\n## Acceptance Criteria\n\n- [ ] Remove current.json creation from `docket work`\n- [ ] Update docket:implement skill to read $DOCKET_BUG env var\n- [ ] Skill runs `docket show $DOCKET_BUG` to get bug context\n- [ ] Remove current.json reading from `docket done`\n- [ ] Clean up any other current.json references\n\n## Context\n\nWith event logs (m4ef), bug state is derived from replaying events. The current.json file was a workspace-local copy of bug state that:\n- Got written by `docket work`\n- Got read by the skill\n- Got synced back by `docket done`\n\nThis is now redundant. The skill can simply:\n1. Read `$DOCKET_BUG` env var (already set by `docket work`)\n2. Run `docket show $DOCKET_BUG` to get current state\n3. Use `docket` commands to update state\n\nSimpler, no sync issues, single source of truth.\n\n## Log",
-  "bug_id": "gpas",
-  "priority": "medium",
-  "status": "draft",
-  "title": "Remove current.json, skill should use docket show instead"
-}
