@@ -55,6 +55,17 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install jj
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install jj-cli
+        run: cargo binstall --no-confirm jj-cli
+
+      - name: Configure git for jj
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
       - name: Run tests
         run: cargo test --verbose
 

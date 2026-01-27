@@ -265,6 +265,7 @@ fn main() -> Result<()> {
             all,
             by_release,
         } => commands::graph(id.as_deref(), all, by_release),
+        Commands::Migrate => commands::migrate(),
         Commands::Release(release_cmd) => match release_cmd {
             ReleaseCommands::New {
                 version,

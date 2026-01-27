@@ -103,8 +103,10 @@ mod init_command {
             .output()
             .unwrap();
         let files = String::from_utf8_lossy(&file_list_output.stdout);
+        // Normalize Windows backslashes to forward slashes for comparison
+        let files_normalized = files.replace('\\', "/");
         assert!(
-            files.contains(".docket/changes/.gitkeep"),
+            files_normalized.contains(".docket/changes/.gitkeep"),
             ".docket/changes/.gitkeep should exist on state branch. Got: {}",
             files
         );
@@ -1364,5 +1366,290 @@ mod record_command {
             .assert()
             .failure()
             .stderr(predicate::str::contains("does not exist"));
+    }
+}
+
+mod migrate_command {
+    use super::*;
+
+    #[test]
+    fn migrate_requires_jj_repo() {
+        let dir = setup_docket_repo();
+
+        // Without a jj repo, migrate should fail
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("migrate")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("requires a jj repository"));
+    }
+
+    #[test]
+    fn migrate_moves_changes_to_state_branch() {
+        let dir = TempDir::new().unwrap();
+
+        // Initialize a jj repository first
+        let jj_init = std::process::Command::new("jj")
+            .args(["git", "init"])
+            .current_dir(dir.path())
+            .output();
+
+        // Skip test if jj is not installed
+        if jj_init.is_err() || !jj_init.as_ref().unwrap().status.success() {
+            eprintln!("Skipping test: jj not installed or init failed");
+            return;
+        }
+
+        // Initialize docket (this creates .docket in working tree AND state branch)
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("init")
+            .assert()
+            .success();
+
+        // Create a couple of changes
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "First change"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Second change"])
+            .assert()
+            .success();
+
+        // Get the change IDs from the list
+        let list_output = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let list_stdout = String::from_utf8_lossy(&list_output.stdout);
+
+        // Verify changes exist
+        assert!(
+            list_stdout.contains("First change"),
+            "First change should exist before migration"
+        );
+        assert!(
+            list_stdout.contains("Second change"),
+            "Second change should exist before migration"
+        );
+
+        // Verify .docket exists in working tree before migration
+        assert!(
+            dir.path().join(".docket").exists(),
+            ".docket should exist in working tree before migration"
+        );
+
+        // Run migrate
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("migrate")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Migration complete"))
+            .stdout(predicate::str::contains("changes"));
+
+        // Verify .docket is removed from working tree
+        assert!(
+            !dir.path().join(".docket").exists(),
+            ".docket should be removed from working tree after migration"
+        );
+
+        // Verify the state branch has the data
+        let file_list = std::process::Command::new("jj")
+            .args(["file", "list", "-r", "docket-state"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let files = String::from_utf8_lossy(&file_list.stdout);
+        // Normalize Windows backslashes to forward slashes for comparison
+        let files_normalized = files.replace('\\', "/");
+        assert!(
+            files_normalized.contains(".docket/changes/"),
+            "State branch should contain .docket/changes/"
+        );
+
+        // Verify we can still list changes (now from state branch)
+        let list_after = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let list_after_stdout = String::from_utf8_lossy(&list_after.stdout);
+
+        assert!(
+            list_after_stdout.contains("First change"),
+            "First change should exist after migration"
+        );
+        assert!(
+            list_after_stdout.contains("Second change"),
+            "Second change should exist after migration"
+        );
+    }
+
+    #[test]
+    fn migrate_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+
+        // Initialize a jj repository first
+        let jj_init = std::process::Command::new("jj")
+            .args(["git", "init"])
+            .current_dir(dir.path())
+            .output();
+
+        // Skip test if jj is not installed
+        if jj_init.is_err() || !jj_init.as_ref().unwrap().status.success() {
+            eprintln!("Skipping test: jj not installed or init failed");
+            return;
+        }
+
+        // Initialize docket
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("init")
+            .assert()
+            .success();
+
+        // Create a change
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Test change"])
+            .assert()
+            .success();
+
+        // Run migrate first time
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("migrate")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Migration complete"));
+
+        // Run migrate second time - should succeed but indicate already migrated
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("migrate")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Already using state branch mode"));
+    }
+
+    #[test]
+    fn migrate_preserves_event_history() {
+        let dir = TempDir::new().unwrap();
+
+        // Initialize a jj repository first
+        let jj_init = std::process::Command::new("jj")
+            .args(["git", "init"])
+            .current_dir(dir.path())
+            .output();
+
+        // Skip test if jj is not installed
+        if jj_init.is_err() || !jj_init.as_ref().unwrap().status.success() {
+            eprintln!("Skipping test: jj not installed or init failed");
+            return;
+        }
+
+        // Initialize docket
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("init")
+            .assert()
+            .success();
+
+        // Create a change and make some updates to create history
+        let new_output = docket_cmd()
+            .current_dir(dir.path())
+            .args(["new", "--title", "Change with history"])
+            .output()
+            .unwrap();
+        let new_stdout = String::from_utf8_lossy(&new_output.stdout);
+
+        // Extract the change ID from output like "✓ Created change abcd - Title"
+        let change_id = new_stdout
+            .lines()
+            .find(|l| l.contains("Created change"))
+            .and_then(|l| l.split_whitespace().nth(3)) // Get the ID: ✓(0) Created(1) change(2) ID(3)
+            .unwrap();
+
+        // Update the change to create more events
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["update", change_id, "--priority", "high"])
+            .assert()
+            .success();
+
+        docket_cmd()
+            .current_dir(dir.path())
+            .args(["approve", change_id])
+            .assert()
+            .success();
+
+        // Read the change file before migration to count events
+        let change_path = dir
+            .path()
+            .join(".docket")
+            .join("changes")
+            .join(&change_id[..1])
+            .join(format!("{}.jsonl", change_id));
+        let content_before = fs::read_to_string(&change_path).unwrap();
+        let events_before = content_before
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count();
+
+        // Run migrate
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("migrate")
+            .assert()
+            .success();
+
+        // Read the events directly from state branch after migration
+        let state_file_output = std::process::Command::new("jj")
+            .args([
+                "file",
+                "show",
+                "-r",
+                "docket-state",
+                &format!(".docket/changes/{}/{}.jsonl", &change_id[..1], change_id),
+            ])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let content_after = String::from_utf8_lossy(&state_file_output.stdout);
+        let events_after = content_after
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count();
+
+        assert_eq!(
+            events_before,
+            events_after,
+            "Event history should be preserved after migration.\n\
+             Before ({} events): {}\n\
+             After ({} events): {}",
+            events_before,
+            content_before.trim(),
+            events_after,
+            content_after.trim()
+        );
+
+        // Also verify we can list the change after migration (uses state branch)
+        let list_after = docket_cmd()
+            .current_dir(dir.path())
+            .arg("list")
+            .output()
+            .unwrap();
+        let list_stdout = String::from_utf8_lossy(&list_after.stdout);
+        assert!(
+            list_stdout.contains("Change with history"),
+            "Change should be listed after migration"
+        );
     }
 }

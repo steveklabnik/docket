@@ -617,6 +617,16 @@ pub enum Commands {
     /// Manage releases (milestones)
     #[command(subcommand)]
     Release(ReleaseCommands),
+
+    /// Migrate from filesystem storage to state branch storage
+    ///
+    /// This command migrates an existing `.docket/` directory in the working tree
+    /// to the state branch model where docket data is stored on an orphan branch.
+    /// The migration is idempotent - running it multiple times is safe.
+    ///
+    /// After migration, the `.docket/` directory is removed from the working tree
+    /// and all data is stored on the `docket-state` bookmark.
+    Migrate,
 }
 
 #[derive(Subcommand)]

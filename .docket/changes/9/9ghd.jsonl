@@ -5,3 +5,4 @@
 {"version":1,"id":"71775385-8c14-4322-b37a-f350c83bbda6","change_id":"9ghd","timestamp":"2026-01-25T23:40:16.901660Z","type":"tag_removed","data":{"tag":"0.3.0"},"actor":"Steves-MacBook-Pro.local"}
 {"version":1,"id":"4e1112f4-0405-42ca-9324-2609c264996a","change_id":"9ghd","timestamp":"2026-01-25T23:40:17.300436Z","type":"tag_removed","data":{"tag":"state-management"},"actor":"Steves-MacBook-Pro.local"}
 {"version":1,"id":"7c3fbaca-8a04-49da-9144-78daeaaf6ce7","change_id":"9ghd","timestamp":"2026-01-26T02:38:00.874727Z","type":"status_changed","data":{"from":"draft","to":"approved"},"actor":"Steves-MacBook-Pro.local"}
+{"version":1,"id":"e09ec954-2ff7-400b-b5e7-22b772365b52","change_id":"9ghd","timestamp":"2026-01-27T02:24:14.956923Z","type":"status_changed","data":{"from":"approved","to":"done"},"actor":"Steves-MacBook-Pro.local"}
