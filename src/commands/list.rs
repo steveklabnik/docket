@@ -19,6 +19,13 @@ fn format_release(release: &str) -> String {
     }
 }
 
+const ID_COLUMN_WIDTH: usize = 6;
+const STATUS_COLUMN_WIDTH: usize = 14;
+const PRIORITY_COLUMN_WIDTH: usize = 8;
+const RELEASE_COLUMN_WIDTH: usize = 12;
+const TAGS_COLUMN_WIDTH: usize = 10;
+const TITLE_COLUMN_WIDTH: usize = 20;
+
 #[allow(clippy::too_many_arguments)]
 pub fn list(
     status_filter: Option<&str>,
@@ -193,7 +200,7 @@ pub fn list(
 fn print_bug_list(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
     // Print header
     println!(
-        "{:6} {:12} {:8} {:12} {:10} {:20} {}",
+        "  {:ID_COLUMN_WIDTH$} {:STATUS_COLUMN_WIDTH$} {:PRIORITY_COLUMN_WIDTH$} {:RELEASE_COLUMN_WIDTH$} {:TAGS_COLUMN_WIDTH$} {:TITLE_COLUMN_WIDTH$} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
@@ -213,9 +220,9 @@ fn print_bug_list(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
 fn print_bug_tree(store: &Store, bugs: &[Change], all_bugs: &[Change]) {
     // Print header
     println!(
-        "{:6} {:12} {:8} {:12} {:10} {:20} {}",
+        "  {:ID_COLUMN_WIDTH$} {:STATUS_COLUMN_WIDTH$} {:RELEASE_COLUMN_WIDTH$} {:RELEASE_COLUMN_WIDTH$} {:TAGS_COLUMN_WIDTH$} {:TITLE_COLUMN_WIDTH$} {}",
         "ID".bold(),
-        "STATUS".bold(),
+        "STATUS".bold(), // 'approved [dep]' is 14 char
         "PRIORITY".bold(),
         "RELEASE".bold(),
         "WORKSPACE".bold(),
@@ -350,7 +357,7 @@ fn print_bug_row(store: &Store, bug: &Change, selected: bool, all_bugs: &[Change
 
     if selected {
         println!(
-            "{} {:6} {:12} {:8} {:12} {:10} {:20} {}",
+            "{} {:ID_COLUMN_WIDTH$} {:STATUS_COLUMN_WIDTH$} {:PRIORITY_COLUMN_WIDTH$} {:RELEASE_COLUMN_WIDTH$} {:TAGS_COLUMN_WIDTH$} {:TITLE_COLUMN_WIDTH$} {}",
             selector.green().bold(),
             bug.id().cyan().bold(),
             status_colored.bold(),
@@ -362,7 +369,7 @@ fn print_bug_row(store: &Store, bug: &Change, selected: bool, all_bugs: &[Change
         );
     } else {
         println!(
-            "{} {:6} {:12} {:8} {:12} {:10} {:20} {}",
+            "{} {:ID_COLUMN_WIDTH$} {:STATUS_COLUMN_WIDTH$} {:PRIORITY_COLUMN_WIDTH$} {:RELEASE_COLUMN_WIDTH$} {:TAGS_COLUMN_WIDTH$} {:TITLE_COLUMN_WIDTH$} {}",
             selector,
             bug.id().cyan(),
             status_colored,
@@ -475,7 +482,7 @@ fn render_interactive_list(
 
     // Print header
     println!(
-        "  {:6} {:12} {:8} {:12} {:10} {:20} {}",
+        "  {:ID_COLUMN_WIDTH$} {:STATUS_COLUMN_WIDTH$} {:PRIORITY_COLUMN_WIDTH$} {:RELEASE_COLUMN_WIDTH$} {:TAGS_COLUMN_WIDTH$} {:TITLE_COLUMN_WIDTH$} {}",
         "ID".bold(),
         "STATUS".bold(),
         "PRIORITY".bold(),
