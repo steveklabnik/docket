@@ -8,6 +8,117 @@ use std::process::Command;
 /// The name of the bookmark used to store docket state.
 pub const STATE_BRANCH: &str = "docket-state";
 
+/// Initialize the docket state branch in a jj repository.
+///
+/// This creates an orphan branch from root() with the .docket directory structure,
+/// sets the docket-state bookmark, and returns the user to their original position.
+///
+/// Returns Ok(true) if the state branch was created, Ok(false) if jj is not available
+/// or we're not in a jj repo, or Err if something went wrong.
+pub fn init_state_branch() -> Result<bool> {
+    use std::fs;
+
+    // Check if we're in a jj repository and get the workspace root
+    let check_output = Command::new("jj").args(["workspace", "root"]).output();
+
+    let workspace_root = match check_output {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
+        Ok(_) => {
+            // jj command worked but we're not in a jj repo
+            return Ok(false);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // jj is not installed
+            return Ok(false);
+        }
+        Err(e) => {
+            return Err(anyhow!("failed to run jj: {}", e));
+        }
+    };
+
+    // Check if state branch already exists
+    if has_state_branch()? {
+        // Already initialized, nothing to do
+        return Ok(true);
+    }
+
+    // Get the current change ID so we can return to it
+    let original_change = current_change_id()?;
+
+    // Helper to return to original change on error
+    let restore_original = || {
+        let _ = Command::new("jj").args(["edit", &original_change]).output();
+    };
+
+    // Create a new commit from root() (orphan branch) and edit it
+    // We use --edit (not --no-edit) so we can create files in the working copy
+    let new_output = Command::new("jj")
+        .args(["new", "root()"])
+        .output()
+        .context("failed to run jj new root()")?;
+
+    if !new_output.status.success() {
+        let stderr = String::from_utf8_lossy(&new_output.stderr);
+        return Err(anyhow!("jj new root() failed: {}", stderr.trim()));
+    }
+
+    // Create .docket/changes/.gitkeep in the working copy
+    // Since we're on an orphan from root(), the working directory is essentially empty
+    let changes_dir = Path::new(&workspace_root).join(".docket").join("changes");
+    if let Err(e) = fs::create_dir_all(&changes_dir) {
+        restore_original();
+        return Err(anyhow!("failed to create .docket/changes directory: {}", e));
+    }
+
+    let gitkeep_path = changes_dir.join(".gitkeep");
+    if let Err(e) = fs::write(&gitkeep_path, "") {
+        restore_original();
+        return Err(anyhow!("failed to create .gitkeep: {}", e));
+    }
+
+    // Describe the commit (this will also snapshot the new files)
+    let describe_output = Command::new("jj")
+        .args(["describe", "-m", "docket: initialize state branch"])
+        .output()
+        .context("failed to run jj describe")?;
+
+    if !describe_output.status.success() {
+        let stderr = String::from_utf8_lossy(&describe_output.stderr);
+        restore_original();
+        return Err(anyhow!("jj describe failed: {}", stderr.trim()));
+    }
+
+    // Set the bookmark on the current change (@)
+    let bookmark_output = Command::new("jj")
+        .args(["bookmark", "set", STATE_BRANCH])
+        .output()
+        .context("failed to run jj bookmark set")?;
+
+    if !bookmark_output.status.success() {
+        let stderr = String::from_utf8_lossy(&bookmark_output.stderr);
+        restore_original();
+        return Err(anyhow!("jj bookmark set failed: {}", stderr.trim()));
+    }
+
+    // Return to the original change
+    let edit_output = Command::new("jj")
+        .args(["edit", &original_change])
+        .output()
+        .context("failed to run jj edit")?;
+
+    if !edit_output.status.success() {
+        let stderr = String::from_utf8_lossy(&edit_output.stderr);
+        return Err(anyhow!(
+            "failed to return to original change: {}",
+            stderr.trim()
+        ));
+    }
+
+    Ok(true)
+}
+
 /// Check if we're running from a workspace directory for the given bug.
 /// Returns true if in workspace ws-{bug_id}, false otherwise.
 pub fn is_in_workspace(bug_id: &str) -> bool {

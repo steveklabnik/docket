@@ -47,6 +47,99 @@ mod init_command {
             .failure()
             .stderr(predicate::str::contains("already initialized"));
     }
+
+    #[test]
+    fn init_creates_state_branch_in_jj_repo() {
+        let dir = TempDir::new().unwrap();
+
+        // Initialize a jj repository first
+        let jj_init = std::process::Command::new("jj")
+            .args(["git", "init"])
+            .current_dir(dir.path())
+            .output();
+
+        // Skip test if jj is not installed
+        if jj_init.is_err() || !jj_init.as_ref().unwrap().status.success() {
+            eprintln!("Skipping test: jj not installed or init failed");
+            return;
+        }
+
+        // Get the current change id before init
+        let before_output = std::process::Command::new("jj")
+            .args(["log", "-r", "@", "--no-graph", "-T", "change_id"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let original_change = String::from_utf8_lossy(&before_output.stdout)
+            .trim()
+            .to_string();
+
+        // Run docket init
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("init")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("docket-state"))
+            .stdout(predicate::str::contains("orphan state branch"));
+
+        // Verify the docket-state bookmark exists
+        let bookmark_output = std::process::Command::new("jj")
+            .args(["bookmark", "list"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let bookmarks = String::from_utf8_lossy(&bookmark_output.stdout);
+        assert!(
+            bookmarks.contains("docket-state"),
+            "docket-state bookmark should exist. Got: {}",
+            bookmarks
+        );
+
+        // Verify .docket/changes/.gitkeep exists on the state branch
+        let file_list_output = std::process::Command::new("jj")
+            .args(["file", "list", "-r", "docket-state"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let files = String::from_utf8_lossy(&file_list_output.stdout);
+        assert!(
+            files.contains(".docket/changes/.gitkeep"),
+            ".docket/changes/.gitkeep should exist on state branch. Got: {}",
+            files
+        );
+
+        // Verify we're back at the original change
+        let after_output = std::process::Command::new("jj")
+            .args(["log", "-r", "@", "--no-graph", "-T", "change_id"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let current_change = String::from_utf8_lossy(&after_output.stdout)
+            .trim()
+            .to_string();
+        assert_eq!(
+            original_change, current_change,
+            "Should be back at original change after init"
+        );
+    }
+
+    #[test]
+    fn init_works_without_jj() {
+        let dir = TempDir::new().unwrap();
+
+        // Just run docket init without jj - should still work
+        docket_cmd()
+            .current_dir(dir.path())
+            .arg("init")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Initialized docket"));
+
+        // The basic .docket directory should exist
+        assert!(dir.path().join(".docket").exists());
+        assert!(dir.path().join(".docket/changes").exists());
+    }
 }
 
 mod new_command {

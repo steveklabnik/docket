@@ -2,6 +2,7 @@ use anyhow::Result;
 use colored::Colorize;
 use std::fs;
 
+use crate::commands::status::jj;
 use crate::store::Store;
 use crate::template;
 
@@ -37,6 +38,24 @@ pub fn init() -> Result<()> {
     // Create .docket/templates/ with default template
     template::create_templates_dir(store.root())?;
     println!("  {} .docket/templates/default.md", "Created".green());
+
+    // Try to initialize the state branch for jj repositories
+    match jj::init_state_branch() {
+        Ok(true) => {
+            println!(
+                "  {} {} bookmark on orphan state branch",
+                "Created".green(),
+                jj::STATE_BRANCH.cyan()
+            );
+        }
+        Ok(false) => {
+            // Not a jj repo or jj not installed - that's fine, we just skip state branch creation
+        }
+        Err(e) => {
+            // Log a warning but don't fail init
+            eprintln!("{} Failed to create state branch: {}", "!".yellow(), e);
+        }
+    }
 
     println!(
         "{} Initialized docket repository at {}",
