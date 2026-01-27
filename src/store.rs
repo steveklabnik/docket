@@ -568,6 +568,14 @@ impl Store {
     /// Append an event to a change's event log
     /// If the change exists in flat structure, migrates it to sharded first
     pub fn append_event(&self, event: &Event) -> Result<()> {
+        match &self.mode {
+            StoreMode::FileSystem { .. } => self.append_event_filesystem(event),
+            StoreMode::StateBranch { .. } => self.append_to_state_branch(event),
+        }
+    }
+
+    /// Append an event using filesystem storage (legacy mode)
+    fn append_event_filesystem(&self, event: &Event) -> Result<()> {
         // Migrate from flat to sharded if needed
         self.migrate_to_sharded(&event.change_id)?;
 
@@ -581,8 +589,52 @@ impl Store {
         event::append_event(&path, event)
     }
 
+    /// Append an event to the state branch (new mode)
+    ///
+    /// This atomically writes the event to the state branch by:
+    /// 1. Reading the current content (if any)
+    /// 2. Appending the new event JSON
+    /// 3. Writing atomically via jj
+    fn append_to_state_branch(&self, event: &Event) -> Result<()> {
+        let change_id = &event.change_id;
+
+        // Build the path: .docket/changes/{first_char}/{id}.jsonl
+        let shard = change_id
+            .chars()
+            .next()
+            .ok_or_else(|| anyhow!("empty change ID"))?;
+        let path = format!(".docket/changes/{}/{}.jsonl", shard, change_id);
+
+        // Read current content (may not exist)
+        let current = jj::read_state_file(&path).unwrap_or_default();
+
+        // Serialize the new event
+        let event_json = serde_json::to_string(event).context("failed to serialize event")?;
+
+        // Append new event to content
+        let new_content = if current.is_empty() {
+            format!("{}\n", event_json)
+        } else if current.ends_with('\n') {
+            format!("{}{}\n", current, event_json)
+        } else {
+            format!("{}\n{}\n", current, event_json)
+        };
+
+        // Write atomically via jj
+        let message = format!("docket: update {}", change_id);
+        jj::write_to_state_branch(&path, &new_content, &message)?;
+
+        Ok(())
+    }
+
     /// Get all events for a change
     pub fn get_events(&self, id: &str) -> Result<Vec<Event>> {
+        // Dispatch to correct implementation based on mode
+        if self.is_state_branch_mode() {
+            return self.read_from_state_branch(id);
+        }
+
+        // FileSystem mode
         let path = self.find_change_path(id).ok_or_else(|| {
             anyhow!(
                 "change not found: '{}'\n\
@@ -854,17 +906,23 @@ impl Store {
 
     /// Begin a transaction for atomic multi-event writes
     pub fn begin_transaction(&self, change_id: &str) -> Result<Transaction> {
-        // Migrate from flat to sharded if needed
-        self.migrate_to_sharded(change_id)?;
+        match &self.mode {
+            StoreMode::FileSystem { .. } => {
+                // Migrate from flat to sharded if needed
+                self.migrate_to_sharded(change_id)?;
 
-        // Get the sharded path and ensure directory exists
-        let path = self.change_path(change_id);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create directory {}", parent.display()))?;
+                // Get the sharded path and ensure directory exists
+                let path = self.change_path(change_id);
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent).with_context(|| {
+                        format!("failed to create directory {}", parent.display())
+                    })?;
+                }
+
+                Transaction::new_filesystem(path)
+            }
+            StoreMode::StateBranch { .. } => Transaction::new_state_branch(change_id.to_string()),
         }
-
-        Transaction::new(path)
     }
 
     /// Recover a potentially corrupted change file
@@ -1057,24 +1115,44 @@ pub struct RecoveryResult {
     pub file_modified: bool,
 }
 
+/// Transaction mode for different storage backends
+#[derive(Debug, Clone)]
+enum TransactionMode {
+    /// Filesystem mode: use temp file + atomic rename
+    FileSystem { path: PathBuf },
+    /// State branch mode: write to jj state branch
+    StateBranch { change_id: String },
+}
+
 /// A transaction for atomic multi-event writes
 ///
-/// Collects events and writes them atomically using a temp file + rename pattern.
+/// Collects events and writes them atomically. The commit strategy depends on the mode:
+/// - FileSystem: uses temp file + rename pattern
+/// - StateBranch: reads current content, appends events, writes atomically via jj
+///
 /// This ensures that either all events are written or none are, preventing
 /// inconsistent state from crashes between event writes.
 pub struct Transaction {
-    /// Path to the change's event log file
-    path: PathBuf,
+    /// Transaction mode (determines commit strategy)
+    mode: TransactionMode,
     /// Events to append
     events: Vec<Event>,
-    /// Whether to call fsync for durability
+    /// Whether to call fsync for durability (filesystem mode only)
     fsync: bool,
 }
 
 impl Transaction {
-    fn new(path: PathBuf) -> Result<Self> {
+    fn new_filesystem(path: PathBuf) -> Result<Self> {
         Ok(Transaction {
-            path,
+            mode: TransactionMode::FileSystem { path },
+            events: Vec::new(),
+            fsync: false,
+        })
+    }
+
+    fn new_state_branch(change_id: String) -> Result<Self> {
+        Ok(Transaction {
+            mode: TransactionMode::StateBranch { change_id },
             events: Vec::new(),
             fsync: false,
         })
@@ -1104,37 +1182,44 @@ impl Transaction {
 
     /// Commit the transaction atomically
     ///
-    /// This writes all events to a temp file, optionally calls fsync,
+    /// For FileSystem mode: writes all events to a temp file, optionally calls fsync,
     /// then atomically renames the temp file over the original.
+    /// For StateBranch mode: reads current content, appends events, writes atomically via jj.
+    ///
     /// If the original file exists, its contents are preserved and new events appended.
     pub fn commit(self) -> Result<()> {
         if self.events.is_empty() {
             return Ok(());
         }
 
+        match self.mode {
+            TransactionMode::FileSystem { path } => {
+                Self::commit_filesystem(path, self.events, self.fsync)
+            }
+            TransactionMode::StateBranch { change_id } => {
+                Self::commit_state_branch(change_id, self.events)
+            }
+        }
+    }
+
+    /// Commit using filesystem (temp file + atomic rename)
+    fn commit_filesystem(path: PathBuf, events: Vec<Event>, fsync: bool) -> Result<()> {
         // Read existing events if file exists
         let mut existing_content = String::new();
-        if self.path.exists() {
-            existing_content = fs::read_to_string(&self.path).with_context(|| {
-                format!(
-                    "failed to read existing events from {}",
-                    self.path.display()
-                )
+        if path.exists() {
+            existing_content = fs::read_to_string(&path).with_context(|| {
+                format!("failed to read existing events from {}", path.display())
             })?;
         }
 
         // Create temp file in same directory (required for atomic rename)
-        let parent = self.path.parent().ok_or_else(|| {
-            anyhow!(
-                "change path has no parent directory: {}",
-                self.path.display()
-            )
-        })?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("change path has no parent directory: {}", path.display()))?;
 
         let temp_path = parent.join(format!(
             ".{}.tmp.{}",
-            self.path
-                .file_name()
+            path.file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("events"),
             std::process::id()
@@ -1160,14 +1245,14 @@ impl Transaction {
         }
 
         // Write new events
-        for event in &self.events {
+        for event in &events {
             let json = serde_json::to_string(event)?;
             writeln!(file, "{}", json)
                 .with_context(|| format!("failed to write event to {}", temp_path.display()))?;
         }
 
         // Optionally fsync for durability
-        if self.fsync {
+        if fsync {
             file.sync_all()
                 .with_context(|| format!("failed to fsync {}", temp_path.display()))?;
         }
@@ -1176,20 +1261,54 @@ impl Transaction {
         drop(file);
 
         // Atomic rename
-        fs::rename(&temp_path, &self.path).with_context(|| {
+        fs::rename(&temp_path, &path).with_context(|| {
             format!(
                 "failed to rename {} to {}",
                 temp_path.display(),
-                self.path.display()
+                path.display()
             )
         })?;
 
         // Optionally fsync the directory for extra durability
-        if self.fsync {
+        if fsync {
             if let Ok(dir) = File::open(parent) {
                 let _ = dir.sync_all();
             }
         }
+
+        Ok(())
+    }
+
+    /// Commit using state branch (jj atomic write)
+    fn commit_state_branch(change_id: String, events: Vec<Event>) -> Result<()> {
+        // Build the path: .docket/changes/{first_char}/{id}.jsonl
+        let shard = change_id
+            .chars()
+            .next()
+            .ok_or_else(|| anyhow!("empty change ID"))?;
+        let path = format!(".docket/changes/{}/{}.jsonl", shard, change_id);
+
+        // Read current content (may not exist)
+        let current = jj::read_state_file(&path).unwrap_or_default();
+
+        // Build new content by appending all events
+        let mut new_content = current.clone();
+
+        // Ensure we start from a newline if there's existing content
+        if !new_content.is_empty() && !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+
+        // Append all events
+        for event in &events {
+            let event_json = serde_json::to_string(event).context("failed to serialize event")?;
+            new_content.push_str(&event_json);
+            new_content.push('\n');
+        }
+
+        // Write atomically via jj
+        let message = format!("docket: update {}", change_id);
+        jj::write_to_state_branch(&path, &new_content, &message)?;
 
         Ok(())
     }
@@ -1310,7 +1429,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
 
-        let mut tx = Transaction::new(path.clone()).unwrap();
+        let mut tx = Transaction::new_filesystem(path.clone()).unwrap();
 
         let event1 = Event::created(
             "abc1".to_string(),
@@ -1348,7 +1467,7 @@ mod tests {
         event::append_event(&path, &initial_event).unwrap();
 
         // Use transaction to append more events
-        let mut tx = Transaction::new(path.clone()).unwrap();
+        let mut tx = Transaction::new_filesystem(path.clone()).unwrap();
 
         let event1 = Event::priority_changed("abc1".to_string(), Priority::Medium, Priority::High);
         let event2 = Event::updated("abc1".to_string(), Some("New Title".to_string()), None);
@@ -1381,7 +1500,7 @@ mod tests {
         let initial_content = fs::read_to_string(&path).unwrap();
 
         // Empty transaction commit
-        let tx = Transaction::new(path.clone()).unwrap();
+        let tx = Transaction::new_filesystem(path.clone()).unwrap();
         assert!(tx.is_empty());
         tx.commit().unwrap();
 
@@ -1395,7 +1514,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("test.jsonl");
 
-        let mut tx = Transaction::new(path.clone()).unwrap().with_fsync(true);
+        let mut tx = Transaction::new_filesystem(path.clone())
+            .unwrap()
+            .with_fsync(true);
 
         let event = Event::created(
             "abc1".to_string(),
@@ -1492,7 +1613,7 @@ mod tests {
         event::append_event(&path, &initial_event).unwrap();
 
         // Append via transaction
-        let mut tx = Transaction::new(path.clone()).unwrap();
+        let mut tx = Transaction::new_filesystem(path.clone()).unwrap();
         tx.add_event(Event::updated(
             "abc1".to_string(),
             Some("New Title".to_string()),

@@ -495,6 +495,113 @@ pub fn list_state_files(pattern: &str) -> Result<Vec<String>> {
     }
 }
 
+/// Write content to a file on the state branch atomically.
+///
+/// This function performs an atomic write by:
+/// 1. Creating a new child commit of docket-state (without editing working copy)
+/// 2. Writing the file content to that commit
+/// 3. Describing the commit with the provided message
+/// 4. Squashing the commit back into docket-state
+///
+/// If any step fails, the state branch is left unchanged.
+pub fn write_to_state_branch(path: &str, content: &str, message: &str) -> Result<()> {
+    // Step 1: Create a new commit from docket-state without editing it
+    // Using --no-edit to stay at current working copy position
+    let new_output = Command::new("jj")
+        .args(["new", STATE_BRANCH, "--no-edit"])
+        .output()
+        .context("failed to run jj new")?;
+
+    if !new_output.status.success() {
+        let stderr = String::from_utf8_lossy(&new_output.stderr);
+        return Err(anyhow!("jj new {} failed: {}", STATE_BRANCH, stderr.trim()));
+    }
+
+    // Parse the new commit ID from stdout
+    // jj new --no-edit outputs something like "Created new commit <change_id>"
+    let stdout = String::from_utf8_lossy(&new_output.stdout);
+    let stderr = String::from_utf8_lossy(&new_output.stderr);
+
+    // The change_id is typically in the output - we need to find it
+    // jj typically outputs to stderr for status messages
+    // Look for the change ID pattern (alphanumeric string after "Created new commit")
+    let combined = format!("{}{}", stdout, stderr);
+
+    // Find the new commit - look for a word that looks like a change_id
+    // jj outputs something like "Created new commit pqrstuvw" or similar
+    let new_change_id = combined
+        .lines()
+        .find(|line| line.contains("Created") || line.contains("created"))
+        .and_then(|line| {
+            // Extract the last word which should be the change_id
+            line.split_whitespace().last()
+        })
+        .ok_or_else(|| anyhow!("could not find new commit ID in jj output: {}", combined))?;
+
+    // Clean up helper - abandon the new commit if something goes wrong
+    let cleanup = |change_id: &str| {
+        let _ = Command::new("jj").args(["abandon", change_id]).output();
+    };
+
+    // Step 2: Write the file content to the new commit
+    // Use jj file write with stdin for the content
+    let mut write_cmd = Command::new("jj")
+        .args(["file", "write", "-r", new_change_id, path])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .context("failed to spawn jj file write")?;
+
+    // Write content to stdin
+    if let Some(ref mut stdin) = write_cmd.stdin {
+        use std::io::Write;
+        stdin
+            .write_all(content.as_bytes())
+            .context("failed to write content to jj file write stdin")?;
+    }
+
+    let write_output = write_cmd
+        .wait_with_output()
+        .context("failed to wait for jj file write")?;
+
+    if !write_output.status.success() {
+        let stderr = String::from_utf8_lossy(&write_output.stderr);
+        cleanup(new_change_id);
+        return Err(anyhow!("jj file write failed: {}", stderr.trim()));
+    }
+
+    // Step 3: Describe the commit
+    let describe_output = Command::new("jj")
+        .args(["describe", "-r", new_change_id, "-m", message])
+        .output()
+        .context("failed to run jj describe")?;
+
+    if !describe_output.status.success() {
+        let stderr = String::from_utf8_lossy(&describe_output.stderr);
+        cleanup(new_change_id);
+        return Err(anyhow!("jj describe failed: {}", stderr.trim()));
+    }
+
+    // Step 4: Squash the new commit into docket-state
+    let squash_output = Command::new("jj")
+        .args(["squash", "-r", new_change_id, "--into", STATE_BRANCH])
+        .output()
+        .context("failed to run jj squash")?;
+
+    if !squash_output.status.success() {
+        let stderr = String::from_utf8_lossy(&squash_output.stderr);
+        cleanup(new_change_id);
+        return Err(anyhow!(
+            "jj squash into {} failed: {}",
+            STATE_BRANCH,
+            stderr.trim()
+        ));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
