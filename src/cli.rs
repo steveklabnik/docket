@@ -467,6 +467,13 @@ pub enum Commands {
         id: Option<String>,
     },
 
+    /// Sync docket state branch with remote (fetch + push)
+    ///
+    /// This command synchronizes the docket-state bookmark with the remote repository.
+    /// It first fetches any remote changes, then pushes local state to the remote.
+    /// Use this to share docket state across machines or with team members.
+    SyncState,
+
     /// Sync workspaces with trunk (fetch, rebase, push)
     Sync {
         /// Only sync specific change ID (prefix match)

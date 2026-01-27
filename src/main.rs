@@ -208,6 +208,7 @@ fn main() -> Result<()> {
             let id = resolve_change_id(id)?;
             commands::edit(&id)
         }
+        Commands::SyncState => commands::sync_state(),
         Commands::Sync {
             id,
             no_push,
