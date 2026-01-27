@@ -337,6 +337,25 @@ pub fn done(
         jj::describe(&commit_message)?;
     }
 
+    // Capture the jj change-id if we're in a workspace
+    let completed_change_id = if in_workspace {
+        match jj::current_change_id() {
+            Ok(id) => Some(id),
+            Err(e) => {
+                eprintln!("{} Could not capture change-id: {}", "!".yellow(), e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Emit WorkCompleted event if we have a change-id
+    if let Some(ref jj_change_id) = completed_change_id {
+        let work_completed_event = Event::work_completed(bug_id.clone(), jj_change_id.clone());
+        store.append_event(&work_completed_event)?;
+    }
+
     // Emit StatusChanged event so it's captured in the jj commit
     let status_event = Event::status_changed(bug_id.clone(), old_status.clone(), Status::Done);
     store.append_event(&status_event)?;
